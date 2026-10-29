@@ -1,0 +1,6 @@
+/**
+ * helper-alarm 对外接口类型。
+ * 具体函数在 app-android/index.uts 中实现。
+ */
+
+export type PermissionCallback = (granted : boolean) => void

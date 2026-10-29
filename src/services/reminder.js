@@ -1,0 +1,163 @@
+/**
+ * 到期提醒引擎。
+ *
+ * 两条路径：
+ * 1. 打开 App 时扫描（runScan）：补发错过的提醒，也负责 H5 端的提醒。
+ * 2. 预先排程（reschedule）：App 端把未来 60 天的提醒点交给原生 AlarmManager，
+ *    这样进程被杀也能按时通知。
+ *
+ * 去重 key 里带 expiryDate，所以续费（到期日变化）后会重新提醒。
+ */
+import { atTimeOfDay, todayStr } from '@/utils/date'
+import { daysLeft, effectiveReminderDays, offsetDateStr } from './expiry'
+import { loadNotifyRecords, saveNotifyRecords } from './db'
+import * as notify from './notify'
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const SCHEDULE_DAYS = 60
+const MAX_NOTIFY_PER_SCAN = 8
+
+function advanceKey(product, reminderDays) {
+  return `${product.id}|${product.expiryDate}|advance|${reminderDays}`
+}
+
+function expiryKey(product) {
+  return `${product.id}|${product.expiryDate}|expiry`
+}
+
+function expiredKey(product) {
+  return `${product.id}|${product.expiryDate}|expired`
+}
+
+/**
+ * 计算当前所有"应当提醒"的项。
+ * @returns {Array<{product, type:'advance'|'expiry'|'expired', days:number, key:string}>}
+ */
+export function collectDue(products, settings, today = todayStr()) {
+  const defaultRd = Number(settings && settings.defaultReminderDays) || 0
+  const due = []
+
+  for (const p of products || []) {
+    if (!p || !p.expiryDate) continue
+    const rd = effectiveReminderDays(p, defaultRd)
+    const dl = daysLeft(p.expiryDate, today)
+
+    if (dl < 0) {
+      due.push({ product: p, type: 'expired', days: dl, key: expiredKey(p) })
+    } else if (dl === 0) {
+      due.push({ product: p, type: 'expiry', days: 0, key: expiryKey(p) })
+    } else if (dl <= rd) {
+      due.push({ product: p, type: 'advance', days: dl, key: advanceKey(p, rd) })
+    }
+  }
+
+  // 越紧急越靠前：已过期 → 今天到期 → 剩余天数少
+  due.sort((a, b) => a.days - b.days)
+  return due
+}
+
+export function buildMessage(item) {
+  const p = item.product
+  let content
+  if (item.type === 'expired') {
+    content = `「${p.name}」已过期 ${Math.abs(item.days)} 天，记得续费`
+  } else if (item.type === 'expiry') {
+    content = `「${p.name}」今天到期，记得续费`
+  } else {
+    content = `「${p.name}」还有 ${item.days} 天到期，记得续费`
+  }
+  return {
+    title: '商品到期提醒',
+    content,
+    payload: { productId: p.id, type: item.type, expiryDate: p.expiryDate }
+  }
+}
+
+/**
+ * 打开 App 时扫描并发送提醒。
+ * @returns {{sent: Array, pending: Array}} pending 是没能发出去（如未授权）的项
+ */
+export function runScan(products, settings, { today = todayStr(), mark = true } = {}) {
+  if (!settings || settings.notifyEnabled === false) return { sent: [], pending: [] }
+
+  const all = collectDue(products, settings, today)
+  if (!all.length) return { sent: [], pending: [] }
+
+  const records = loadNotifyRecords()
+  const todo = all.filter(d => !records[d.key])
+  if (!todo.length) return { sent: [], pending: [] }
+
+  const sent = []
+  const failed = []
+  todo.slice(0, MAX_NOTIFY_PER_SCAN).forEach(item => {
+    const msg = buildMessage(item)
+    if (notify.notifyNow(msg)) {
+      if (mark) records[item.key] = Date.now()
+      sent.push(item)
+    } else {
+      failed.push(item)
+    }
+  })
+
+  if (mark && sent.length) saveNotifyRecords(records)
+  return { sent, pending: [...failed, ...todo.slice(MAX_NOTIFY_PER_SCAN)] }
+}
+
+/**
+ * 生成未来一段时间内的定时提醒条目。
+ * @returns {Array<{id, at, title, content, payload}>}
+ */
+export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = Date.now() } = {}) {
+  if (!settings || settings.notifyEnabled === false) return []
+  const defaultRd = Number(settings.defaultReminderDays) || 0
+  const notifyTime = settings.notifyTime || '09:00'
+  const until = now + days * DAY_MS
+  const entries = []
+
+  for (const p of products || []) {
+    if (!p || !p.expiryDate) continue
+    const rd = effectiveReminderDays(p, defaultRd)
+
+    const points = [
+      { date: offsetDateStr(p.expiryDate, -rd, 'day'), type: 'advance', days: rd },
+      { date: p.expiryDate, type: 'expiry', days: 0 }
+    ]
+
+    for (const pt of points) {
+      const at = atTimeOfDay(pt.date, notifyTime)
+      if (at <= now || at > until) continue
+      const item = { product: p, type: pt.type, days: pt.days }
+      entries.push({
+        id: item.type === 'advance' ? advanceKey(p, rd) : expiryKey(p),
+        at,
+        ...buildMessage(item)
+      })
+    }
+  }
+
+  entries.sort((a, b) => a.at - b.at)
+  return entries
+}
+
+/** 全量重排原生定时器，返回排程条目数 */
+export function reschedule(products, settings) {
+  const entries = buildSchedule(products, settings)
+  const ok = notify.scheduleAll(entries)
+  return { count: entries.length, native: ok }
+}
+
+/** 清理已不存在商品的通知记录，避免无限增长 */
+export function pruneNotifyRecords(products) {
+  const records = loadNotifyRecords()
+  const ids = new Set((products || []).map(p => p.id))
+  let changed = false
+  for (const key of Object.keys(records)) {
+    const id = key.split('|')[0]
+    if (!ids.has(id)) {
+      delete records[key]
+      changed = true
+    }
+  }
+  if (changed) saveNotifyRecords(records)
+  return changed
+}

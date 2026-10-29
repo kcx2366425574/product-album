@@ -1,0 +1,21 @@
+/**
+ * Vitest 环境下的 UTS 插件替身。
+ * 测试只覆盖纯函数（到期计算、排程生成），不会真正触发原生通知。
+ */
+export function isPermissionGranted() {
+  return false
+}
+
+export function requestPermission(callback) {
+  if (callback) callback(false)
+}
+
+export function notifyNow() {}
+
+export function schedule() {}
+
+export function cancel() {}
+
+export function consumeLaunchPayload() {
+  return ''
+}

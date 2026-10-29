@@ -1,0 +1,235 @@
+/**
+ * helper-alarm · Android 实现
+ *
+ * 原理：
+ * 1. AlarmManager 在目标时间点触发一个显式 BroadcastReceiver（AlarmReceiver）
+ * 2. Receiver 由系统在 App 进程不存在时也会实例化，所以 App 被杀也能收到
+ * 3. Receiver 内用 NotificationManager 弹出通知栏消息
+ * 4. 点击通知通过 PendingIntent 拉起 App，并带上 payload
+ *
+ * 插件包名由 HBuilderX 按规则生成：uts.sdk.modules.(插件ID转驼峰)
+ * 即 uts.sdk.modules.helperAlarm，AndroidManifest.xml 里引用的就是这个名字。
+ */
+import Context from "android.content.Context"
+import Intent from "android.content.Intent"
+import Uri from "android.net.Uri"
+import AlarmManager from "android.app.AlarmManager"
+import PendingIntent from "android.app.PendingIntent"
+import BroadcastReceiver from "android.content.BroadcastReceiver"
+import Notification from "android.app.Notification"
+import NotificationManager from "android.app.NotificationManager"
+import NotificationChannel from "android.app.NotificationChannel"
+import Build from "android.os.Build"
+import Settings from "android.provider.Settings"
+import PackageManager from "android.content.pm.PackageManager"
+import System from "java.lang.System"
+import { UTSAndroid } from "io.dcloud.uts"
+import { PermissionCallback } from "../interface.uts"
+
+const CHANNEL_ID : string = "pa_reminder"
+const CHANNEL_NAME : string = "到期提醒"
+const CHANNEL_DESC : string = "商品使用期限到期提醒"
+const EXTRA_PAYLOAD : string = "pa_payload"
+const ACTION_FIRE : string = "uts.sdk.modules.helperAlarm.FIRE"
+const PENDING_FLAGS : number = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+
+/** 字符串 → 稳定的正整数 ID（用于 requestCode / notificationId） */
+function hashId(id : string) : number {
+  let h = 7
+  for (let i = 0; i < id.length; i++) {
+    h = (h * 31 + id.charCodeAt(i)) % 2147483647
+  }
+  return h + 1
+}
+
+function ensureChannel(context : Context) : void {
+  if (Build.VERSION.SDK_INT < 26) return
+  const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+  if (manager.getNotificationChannel(CHANNEL_ID) != null) return
+  const channel = new NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH)
+  channel.setDescription(CHANNEL_DESC)
+  channel.enableVibration(true)
+  manager.createNotificationChannel(channel)
+}
+
+function smallIcon(context : Context) : number {
+  const res = context.getResources().getIdentifier("ic_stat_pa", "drawable", context.getPackageName())
+  if (res != 0) return res
+  return context.getApplicationInfo().icon
+}
+
+function buildNotification(context : Context, title : string, content : string, payload : string) : Notification {
+  ensureChannel(context)
+
+  let builder : Notification.Builder
+  if (Build.VERSION.SDK_INT >= 26) {
+    builder = new Notification.Builder(context, CHANNEL_ID)
+  } else {
+    builder = new Notification.Builder(context)
+  }
+
+  builder.setContentTitle(title)
+  builder.setContentText(content)
+  builder.setSmallIcon(smallIcon(context))
+  builder.setAutoCancel(true)
+  builder.setDefaults(Notification.DEFAULT_ALL)
+  builder.setPriority(Notification.PRIORITY_HIGH)
+  builder.setShowWhen(true)
+
+  const launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName())
+  if (launchIntent != null) {
+    launchIntent.putExtra(EXTRA_PAYLOAD, payload)
+    launchIntent.setFlags(
+      Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP
+    )
+    const contentIntent = PendingIntent.getActivity(
+      context,
+      hashId(payload).toInt(),
+      launchIntent,
+      PENDING_FLAGS.toInt()
+    )
+    builder.setContentIntent(contentIntent)
+  }
+
+  return builder.build()
+}
+
+function showNotification(context : Context, id : string, title : string, content : string, payload : string) : void {
+  const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+  manager.notify(hashId(id).toInt(), buildNotification(context, title, content, payload))
+}
+
+/**
+ * 到点触发的广播接收器。
+ * 必须无参构造，系统会反射实例化。
+ */
+export class AlarmReceiver extends BroadcastReceiver {
+  constructor() {
+    super()
+  }
+
+  override onReceive(context : Context, intent : Intent) : void {
+    const id = intent.getStringExtra("id") ?? ""
+    const title = intent.getStringExtra("title") ?? "商品到期提醒"
+    const content = intent.getStringExtra("content") ?? ""
+    const payload = intent.getStringExtra("payload") ?? ""
+    showNotification(context, id, title, content, payload)
+  }
+}
+
+export function isPermissionGranted() : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+  return manager.areNotificationsEnabled()
+}
+
+export function requestPermission(callback : PermissionCallback) : void {
+  const context = UTSAndroid.getAppContext()
+  const activity = UTSAndroid.getUniActivity()
+  if (context == null || activity == null) {
+    callback(false)
+    return
+  }
+
+  if (Build.VERSION.SDK_INT >= 33) {
+    const granted = activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED
+    if (!granted) {
+      UTSAndroid.requestSystemPermission(
+        activity,
+        ["android.permission.POST_NOTIFICATIONS"],
+        (allRight : boolean, grantedList : string[]) => {
+          callback(allRight && isPermissionGranted())
+        },
+        (doNotAskAgain : boolean, grantedList : string[]) => {
+          callback(false)
+        }
+      )
+      return
+    }
+  }
+
+  if (isPermissionGranted()) {
+    callback(true)
+    return
+  }
+
+  // 用户已经在系统设置里关掉了通知：跳到本应用的通知设置页
+  try {
+    let intent : Intent
+    if (Build.VERSION.SDK_INT >= 26) {
+      intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+      intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.getPackageName())
+    } else {
+      intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+      intent.setData(Uri.parse("package:" + context.getPackageName()))
+    }
+    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+  } catch (e) {
+    console.log("[helper-alarm] 打开通知设置失败: " + e)
+  }
+  callback(false)
+}
+
+export function notifyNow(title : string, content : string, payload : string) : void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return
+  const uniqueId = payload + "|" + System.currentTimeMillis().toString()
+  showNotification(context, uniqueId, title, content, payload)
+}
+
+export function schedule(id : string, triggerAt : number, title : string, content : string, payload : string) : void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return
+
+  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
+  intent.setAction(ACTION_FIRE)
+  intent.putExtra("id", id)
+  intent.putExtra("title", title)
+  intent.putExtra("content", content)
+  intent.putExtra("payload", payload)
+
+  const pendingIntent = PendingIntent.getBroadcast(
+    context,
+    hashId(id).toInt(),
+    intent,
+    PENDING_FLAGS.toInt()
+  )
+  const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+  try {
+    // Android 12+ 未授予精确闹钟权限时会抛 SecurityException，降级为非精确闹钟
+    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+  } catch (e) {
+    console.log("[helper-alarm] 精确闹钟不可用，降级: " + e)
+    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+  }
+}
+
+export function cancel(id : string) : void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return
+  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
+  intent.setAction(ACTION_FIRE)
+  const pendingIntent = PendingIntent.getBroadcast(
+    context,
+    hashId(id).toInt(),
+    intent,
+    PENDING_FLAGS.toInt()
+  )
+  const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+  alarmManager.cancel(pendingIntent)
+  pendingIntent.cancel()
+}
+
+export function consumeLaunchPayload() : string {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return ""
+  const intent = activity.getIntent()
+  if (intent == null) return ""
+  const payload = intent.getStringExtra(EXTRA_PAYLOAD)
+  if (payload == null) return ""
+  intent.removeExtra(EXTRA_PAYLOAD)
+  return payload
+}
