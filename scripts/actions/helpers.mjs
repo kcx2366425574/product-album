@@ -5,7 +5,13 @@ import path from 'node:path'
  * @param {import('playwright-core').Page} page
  */
 export async function addProduct(page, opts = {}) {
-  const { name = '测试商品 · 品牌授权图包', category = '服装', tags = '授权 秋冬', withImage = true } = opts
+  const {
+    name = '测试商品 · 品牌授权图包',
+    category = '服装',
+    tags = '授权 秋冬',
+    withImage = true,
+    imagePath = 'src/static/logo.png'
+  } = opts
 
   await page.getByText('添加第一个商品', { exact: true }).click()
   await page.waitForTimeout(1200)
@@ -19,7 +25,7 @@ export async function addProduct(page, opts = {}) {
     const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 })
     await page.getByText('添加', { exact: true }).click()
     const chooser = await chooserPromise
-    await chooser.setFiles(path.resolve('src/static/logo.png'))
+    await chooser.setFiles(path.resolve(imagePath))
     await page.waitForTimeout(1800)
   }
 

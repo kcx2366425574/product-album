@@ -69,4 +69,40 @@ describe('db 写入失败处理', () => {
     failWrites = false
     expect(saveProducts([])).toBe(true)
   })
+
+  it('规范化时保留图片缩略图字段', () => {
+    upsertProduct(
+      product({
+        images: [
+          {
+            id: 'img1',
+            w: 1600,
+            h: 1200,
+            size: 1000,
+            path: '',
+            thumbId: 'img1__thumb',
+            thumbPath: '',
+            thumbW: 480,
+            thumbH: 360
+          }
+        ]
+      })
+    )
+
+    const image = loadProducts()[0].images[0]
+    expect(image.thumbId).toBe('img1__thumb')
+    expect(image.thumbW).toBe(480)
+    expect(image.thumbH).toBe(360)
+  })
+
+  it('老数据缺少缩略图字段时安全回退为空值', () => {
+    upsertProduct(
+      product({ images: [{ id: 'img1', w: 1600, h: 1200, size: 1000, path: '' }] })
+    )
+
+    const image = loadProducts()[0].images[0]
+    expect(image.thumbId).toBe('')
+    expect(image.thumbPath).toBe('')
+    expect(image.thumbW).toBe(0)
+  })
 })

@@ -67,7 +67,12 @@ export function normalizeProduct(raw) {
           w: toInt(i.w),
           h: toInt(i.h),
           size: toInt(i.size),
-          path: String(i.path || '')
+          path: String(i.path || ''),
+          // 缩略图字段：老数据没有这些字段时为空，展示层会自动回退到原图
+          thumbId: String(i.thumbId || ''),
+          thumbPath: String(i.thumbPath || ''),
+          thumbW: toInt(i.thumbW),
+          thumbH: toInt(i.thumbH)
         }))
     : []
 

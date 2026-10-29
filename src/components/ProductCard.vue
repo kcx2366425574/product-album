@@ -38,7 +38,7 @@ const props = defineProps({
 defineEmits(['open'])
 
 const cover = computed(() => props.product.images[props.product.coverIndex] || null)
-const coverUrl = useImageUrl(cover)
+const coverUrl = useImageUrl(cover, { thumb: true })
 
 const days = computed(() => daysLeft(props.product.expiryDate, props.today || undefined))
 const status = computed(() => statusOf(props.product, props.defaultReminderDays, props.today || undefined))

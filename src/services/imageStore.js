@@ -11,7 +11,9 @@
 import { makeId } from '@/utils/id'
 
 const MAX_SIDE = 1600
+const THUMB_SIDE = 480
 const JPEG_QUALITY = 0.82
+const THUMB_QUALITY = 0.75
 
 /**
  * 导入 uni.chooseImage 的结果。
@@ -99,27 +101,22 @@ function loadImageEl(src) {
   })
 }
 
-async function compressBlob(blob) {
-  const objectUrl = URL.createObjectURL(blob)
-  try {
-    const img = await loadImageEl(objectUrl)
-    const w0 = img.naturalWidth || img.width
-    const h0 = img.naturalHeight || img.height
-    const scale = Math.min(1, MAX_SIDE / Math.max(w0, h0))
-    const w = Math.max(1, Math.round(w0 * scale))
-    const h = Math.max(1, Math.round(h0 * scale))
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(0, 0, w, h)
-    ctx.drawImage(img, 0, 0, w, h)
-    const out = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY))
-    return { blob: out || blob, w, h }
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
+function renderSize(img, maxSide) {
+  const w0 = img.naturalWidth || img.width
+  const h0 = img.naturalHeight || img.height
+  const scale = Math.min(1, maxSide / Math.max(w0, h0))
+  return { w: Math.max(1, Math.round(w0 * scale)), h: Math.max(1, Math.round(h0 * scale)) }
+}
+
+function drawJpeg(img, size, quality) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size.w
+  canvas.height = size.h
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillRect(0, 0, size.w, size.h)
+  ctx.drawImage(img, 0, 0, size.w, size.h)
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
 }
 
 async function importOne(tempPath, file) {
@@ -128,22 +125,54 @@ async function importOne(tempPath, file) {
     const resp = await fetch(tempPath)
     source = await resp.blob()
   }
-  const { blob, w, h } = await compressBlob(source)
-  const id = makeId('img')
-  await idbPut(id, blob)
-  return { id, w, h, size: blob.size, path: '' }
+
+  const objectUrl = URL.createObjectURL(source)
+  try {
+    const img = await loadImageEl(objectUrl)
+    const fullSize = renderSize(img, MAX_SIDE)
+    const fullBlob = (await drawJpeg(img, fullSize, JPEG_QUALITY)) || source
+
+    const id = makeId('img')
+    await idbPut(id, fullBlob)
+
+    // 列表只展示缩略图，避免每张卡片都解码 1600px 原图
+    const thumbSize = renderSize(img, THUMB_SIDE)
+    const thumbBlob = await drawJpeg(img, thumbSize, THUMB_QUALITY)
+    let thumbId = ''
+    if (thumbBlob) {
+      thumbId = `${id}__thumb`
+      await idbPut(thumbId, thumbBlob)
+    }
+
+    return {
+      id,
+      w: fullSize.w,
+      h: fullSize.h,
+      size: fullBlob.size,
+      path: '',
+      thumbId,
+      thumbW: thumbSize.w,
+      thumbH: thumbSize.h
+    }
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }
 
 const urlCache = new Map()
 
-export async function resolveImageUrl(meta) {
+export async function resolveImageUrl(meta, options = {}) {
   if (!meta || !meta.id) return ''
-  if (urlCache.has(meta.id)) return urlCache.get(meta.id)
+  const wantThumb = !!(options && options.thumb)
+  const key = wantThumb && meta.thumbId ? meta.thumbId : meta.id
+  if (urlCache.has(key)) return urlCache.get(key)
   try {
-    const blob = await idbGet(meta.id)
+    let blob = await idbGet(key)
+    // 老数据没有缩略图时回退到原图
+    if (!blob && key !== meta.id) blob = await idbGet(meta.id)
     if (!blob) return ''
     const url = URL.createObjectURL(blob)
-    urlCache.set(meta.id, url)
+    urlCache.set(key, url)
     return url
   } catch (e) {
     console.error('[imageStore] 读取图片失败', e)
@@ -153,13 +182,16 @@ export async function resolveImageUrl(meta) {
 
 export async function removeImage(meta) {
   if (!meta || !meta.id) return
-  const cached = urlCache.get(meta.id)
-  if (cached) {
-    URL.revokeObjectURL(cached)
-    urlCache.delete(meta.id)
+  const keys = [meta.id, meta.thumbId].filter(Boolean)
+  for (const key of keys) {
+    const cached = urlCache.get(key)
+    if (cached) {
+      URL.revokeObjectURL(cached)
+      urlCache.delete(key)
+    }
   }
   try {
-    await idbDelete(meta.id)
+    await Promise.all(keys.map(key => idbDelete(key)))
   } catch (e) {
     console.error('[imageStore] 删除图片失败', e)
   }
@@ -182,11 +214,11 @@ export async function imageToDataUrl(meta) {
 /* App                                                                */
 /* ------------------------------------------------------------------ */
 // #ifdef APP-PLUS
-function compressAppImage(src, id) {
+function compressAppImage(src, id, { suffix = '', maxSide = MAX_SIDE, quality = 82 } = {}) {
   return new Promise(resolve => {
-    const dst = `_doc/pa_${id}.jpg`
+    const dst = `_doc/pa_${id}${suffix}.jpg`
     plus.zip.compressImage(
-      { src, dst, quality: 82, width: `${MAX_SIDE}px`, overwrite: true },
+      { src, dst, quality, width: `${maxSide}px`, overwrite: true },
       () => resolve(dst),
       err => {
         console.warn('[imageStore] 压缩失败，改用原图', err)
@@ -232,22 +264,45 @@ async function importOne(tempPath) {
   if (!finalPath) finalPath = await saveFileApp(tempPath)
   const info = await getImageInfoApp(finalPath)
   const size = await getFileSizeApp(finalPath)
-  return { id, w: info.width || 0, h: info.height || 0, size, path: finalPath }
+
+  const thumbPath = await compressAppImage(tempPath, id, {
+    suffix: '_thumb',
+    maxSide: THUMB_SIDE,
+    quality: 75
+  })
+
+  return {
+    id,
+    w: info.width || 0,
+    h: info.height || 0,
+    size,
+    path: finalPath,
+    thumbPath,
+    thumbW: 0,
+    thumbH: 0
+  }
 }
 
-export async function resolveImageUrl(meta) {
-  return (meta && meta.path) || ''
+export async function resolveImageUrl(meta, options = {}) {
+  if (!meta) return ''
+  if (options && options.thumb && meta.thumbPath) return meta.thumbPath
+  return meta.path || ''
 }
 
-export function removeImage(meta) {
-  if (!meta || !meta.path) return Promise.resolve()
+function removeFileApp(path) {
   return new Promise(resolve => {
     plus.io.resolveLocalFileSystemURL(
-      meta.path,
+      path,
       entry => entry.remove(() => resolve(), () => resolve()),
       () => resolve()
     )
   })
+}
+
+export function removeImage(meta) {
+  if (!meta) return Promise.resolve()
+  const paths = [meta.path, meta.thumbPath].filter(Boolean)
+  return Promise.all(paths.map(removeFileApp))
 }
 
 export async function imageToDataUrl(meta) {

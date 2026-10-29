@@ -326,7 +326,11 @@ async function save() {
       w: m.w || 0,
       h: m.h || 0,
       size: m.size || 0,
-      path: m.path || ''
+      path: m.path || '',
+      thumbId: m.thumbId || '',
+      thumbPath: m.thumbPath || '',
+      thumbW: m.thumbW || 0,
+      thumbH: m.thumbH || 0
     })),
     coverIndex: form.coverIndex,
     purchaseDate: form.purchaseDate,
