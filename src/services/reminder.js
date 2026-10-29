@@ -14,7 +14,10 @@ import { loadNotifyRecords, saveNotifyRecords } from './db'
 import * as notify from './notify'
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const SCHEDULE_DAYS = 60
+// 覆盖一年，避免用户长期不打开 App 时排程过期漏提醒
+const SCHEDULE_DAYS = 365
+// Android 单个 App 的 AlarmManager 闹钟上限约 500 条，留出余量
+const MAX_SCHEDULE_ENTRIES = 400
 const MAX_NOTIFY_PER_SCAN = 8
 
 function advanceKey(product, reminderDays) {
@@ -160,8 +163,9 @@ export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = 
     }
   }
 
+  // 越早的提醒越重要，超出上限时优先保留最近的
   entries.sort((a, b) => a.at - b.at)
-  return entries
+  return entries.slice(0, MAX_SCHEDULE_ENTRIES)
 }
 
 /**

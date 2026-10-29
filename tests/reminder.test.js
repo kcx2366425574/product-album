@@ -91,4 +91,19 @@ describe('buildSchedule', () => {
     expect(entries[0].payload.type).toBe('expiry')
     expect(entries[0].at).toBe(new Date(2026, 10, 5, 9, 0, 0).getTime())
   })
+
+  it('默认窗口覆盖一年内的提醒', () => {
+    const entries = buildSchedule([product({ expiryDate: '2027-06-01' })], settings, { now })
+    expect(entries).toHaveLength(2)
+    expect(entries[0].payload.type).toBe('advance')
+    expect(entries[1].payload.type).toBe('expiry')
+  })
+
+  it('条目超过上限时保留最近的一批', () => {
+    const list = Array.from({ length: 201 }, (_, i) =>
+      product({ id: `p${i}`, expiryDate: '2026-11-05', reminderDays: 1 })
+    )
+    const entries = buildSchedule(list, settings, { now, days: 30 })
+    expect(entries).toHaveLength(400)
+  })
 })
