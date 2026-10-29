@@ -6,8 +6,10 @@ vi.mock('@/services/notify', () => ({
 }))
 
 import { loadNotifyRecords, saveNotifyRecords } from '@/services/db'
-import { notifyNow } from '@/services/notify'
-import { markDelivered, pruneNotifyRecords, runScan } from '@/services/reminder'
+import { notifyNow, scheduleAll } from '@/services/notify'
+import { markDelivered, pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
+import { offsetDateStr } from '@/services/expiry'
+import { todayStr } from '@/utils/date'
 
 const settings = { defaultReminderDays: 7, notifyTime: '09:00', notifyEnabled: true }
 
@@ -31,6 +33,7 @@ beforeEach(() => {
     setStorageSync: (key, value) => storage.set(key, value)
   })
   vi.mocked(notifyNow).mockReset()
+  vi.mocked(scheduleAll).mockClear()
 })
 
 describe('runScan 去重记录', () => {
@@ -74,6 +77,51 @@ describe('runScan 去重记录', () => {
     expect(notifyNow).not.toHaveBeenCalled()
     expect(result.sent).toHaveLength(0)
     expect(loadNotifyRecords()).toEqual({})
+  })
+})
+
+describe('逾期重复提醒', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('到达重复间隔后 runScan 再次发送', () => {
+    const today = todayStr()
+    const expiry = offsetDateStr(today, -10, 'day')
+    saveNotifyRecords({ [`p1|${expiry}|expired`]: Date.now() - 4 * DAY })
+
+    vi.mocked(notifyNow).mockReturnValue(true)
+    const result = runScan(
+      [product({ expiryDate: expiry })],
+      { ...settings, overdueRepeatDays: 3 },
+      { today }
+    )
+
+    expect(result.sent).toHaveLength(1)
+  })
+
+  it('未到重复间隔不发送', () => {
+    const today = todayStr()
+    const expiry = offsetDateStr(today, -10, 'day')
+    saveNotifyRecords({ [`p1|${expiry}|expired`]: Date.now() - 1 * DAY })
+
+    vi.mocked(notifyNow).mockReturnValue(true)
+    const result = runScan(
+      [product({ expiryDate: expiry })],
+      { ...settings, overdueRepeatDays: 3 },
+      { today }
+    )
+
+    expect(result.sent).toHaveLength(0)
+  })
+
+  it('reschedule 不会因已有记录而丢掉逾期重复条目', () => {
+    const today = todayStr()
+    const expiry = offsetDateStr(today, -10, 'day')
+    saveNotifyRecords({ [`p1|${expiry}|expired`]: Date.now() })
+
+    reschedule([product({ expiryDate: expiry })], { ...settings, overdueRepeatDays: 3 })
+
+    const entries = vi.mocked(scheduleAll).mock.calls.at(-1)[0]
+    expect(entries.some(entry => entry.repeatDays === 3)).toBe(true)
   })
 })
 

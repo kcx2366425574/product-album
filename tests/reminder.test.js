@@ -56,6 +56,36 @@ describe('collectDue', () => {
   })
 })
 
+describe('collectDue 逾期重复', () => {
+  const repeatSettings = { ...settings, overdueRepeatDays: 3 }
+  const today = '2026-10-29'
+  const expired = product({ expiryDate: '2026-10-20' })
+  const key = 'p1|2026-10-20|expired'
+
+  it('从未提醒过时命中', () => {
+    const due = collectDue([expired], repeatSettings, today)
+    expect(due).toHaveLength(1)
+    expect(due[0].repeat).toBe(true)
+  })
+
+  it('未到重复间隔不再提醒', () => {
+    const records = { [key]: new Date(2026, 9, 28, 10).getTime() }
+    expect(collectDue([expired], repeatSettings, today, records)).toHaveLength(0)
+  })
+
+  it('到达重复间隔后再次提醒', () => {
+    const records = { [key]: new Date(2026, 9, 26, 10).getTime() }
+    expect(collectDue([expired], repeatSettings, today, records)).toHaveLength(1)
+  })
+
+  it('关闭逾期重复时只按原有去重逻辑处理', () => {
+    const records = { [key]: new Date(2026, 9, 28, 10).getTime() }
+    const due = collectDue([expired], settings, today, records)
+    expect(due).toHaveLength(1)
+    expect(due[0].repeat).toBeUndefined()
+  })
+})
+
 describe('buildSchedule', () => {
   const now = new Date(2026, 9, 29, 8, 0, 0).getTime()
 
@@ -97,6 +127,37 @@ describe('buildSchedule', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0].payload.type).toBe('advance')
     expect(entries[1].payload.type).toBe('expiry')
+  })
+
+  it('开启逾期重复后生成下一次逾期提醒', () => {
+    const entries = buildSchedule(
+      [product({ expiryDate: '2026-10-24' })],
+      { ...settings, overdueRepeatDays: 3 },
+      { now, days: 30, today: '2026-10-29' }
+    )
+    const overdue = entries.find(entry => entry.repeatDays === 3)
+    expect(overdue).toBeTruthy()
+    expect(overdue.id).toBe('p1|2026-10-24|expired')
+    expect(overdue.at).toBe(new Date(2026, 9, 30, 9, 0, 0).getTime())
+  })
+
+  it('未到期商品也排第一次逾期提醒', () => {
+    const entries = buildSchedule(
+      [product({ expiryDate: '2026-11-05' })],
+      { ...settings, overdueRepeatDays: 3 },
+      { now, days: 30, today: '2026-10-29' }
+    )
+    const overdue = entries.find(entry => entry.repeatDays === 3)
+    expect(overdue).toBeTruthy()
+    expect(overdue.at).toBe(new Date(2026, 10, 8, 9, 0, 0).getTime())
+  })
+
+  it('未开启逾期重复时过期商品不排程', () => {
+    const entries = buildSchedule([product({ expiryDate: '2026-10-24' })], settings, {
+      now,
+      days: 30
+    })
+    expect(entries).toHaveLength(0)
   })
 
   it('条目超过上限时保留最近的一批', () => {

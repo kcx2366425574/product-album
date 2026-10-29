@@ -151,7 +151,14 @@ export function scheduleAll(entries) {
     const ids = []
     for (const e of entries || []) {
       if (!e || !e.id || !e.at) continue
-      nativeSchedule(e.id, e.at, e.title, e.content, e.payload ? JSON.stringify(e.payload) : '')
+      nativeSchedule(
+        e.id,
+        e.at,
+        e.title,
+        e.content,
+        e.payload ? JSON.stringify(e.payload) : '',
+        e.repeatDays || 0
+      )
       ids.push(e.id)
     }
     saveScheduledIds(ids)

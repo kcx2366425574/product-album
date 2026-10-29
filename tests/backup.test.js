@@ -42,6 +42,7 @@ describe('sanitizeSettings', () => {
         defaultReminderDays: 7,
         notifyTime: '09:00',
         notifyEnabled: true,
+        overdueRepeatDays: 3,
         theme: 'auto',
         permissionPrompted: true,
         lastBackupAt: 123
@@ -50,6 +51,7 @@ describe('sanitizeSettings', () => {
       defaultReminderDays: 7,
       notifyTime: '09:00',
       notifyEnabled: true,
+      overdueRepeatDays: 3,
       theme: 'auto'
     })
   })

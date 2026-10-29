@@ -14,7 +14,13 @@ export const BACKUP_VERSION = 1
 export const BACKUP_REMIND_DAYS = 30
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const SETTINGS_KEYS = ['defaultReminderDays', 'notifyTime', 'notifyEnabled', 'theme']
+const SETTINGS_KEYS = [
+  'defaultReminderDays',
+  'notifyTime',
+  'notifyEnabled',
+  'overdueRepeatDays',
+  'theme'
+]
 
 /**
  * 有商品且超过 intervalDays 没有备份时提醒。

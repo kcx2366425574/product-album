@@ -138,10 +138,23 @@ export class AlarmReceiver extends BroadcastReceiver {
     const title = intent.getStringExtra("title") ?? "商品到期提醒"
     const content = intent.getStringExtra("content") ?? ""
     const payload = intent.getStringExtra("payload") ?? ""
+    const repeatDays = intent.getIntExtra("repeatDays", 0)
     // 进程被杀后 UTSAndroid.getAppContext() 可能为空，这里必须用广播自带的 context
     if (!notificationsEnabled(context)) return
     appendDelivered(context, id)
     showNotification(context, id, title, content, payload)
+
+    // 逾期重复：本次弹完后再排下一次，App 不打开也能持续提醒
+    if (repeatDays > 0) {
+      try {
+        const interval = repeatDays.toLong() * 86400000
+        const nextAt = parseInt((System.currentTimeMillis() + interval).toString(), 10)
+        registerAlarm(context, id, nextAt, title, content, payload, repeatDays)
+        saveScheduleMeta(context, id, nextAt, title, content, payload, repeatDays)
+      } catch (e) {
+        console.log("[helper-alarm] 续排逾期提醒失败: " + e)
+      }
+    }
   }
 }
 
@@ -166,7 +179,7 @@ function readScheduleIds(prefs : SharedPreferences) : string[] {
   return raw.split("\n").filter((s : string) : boolean => s.length > 0)
 }
 
-function saveScheduleMeta(context : Context, id : string, triggerAt : number, title : string, content : string, payload : string) : void {
+function saveScheduleMeta(context : Context, id : string, triggerAt : number, title : string, content : string, payload : string, repeatDays : number) : void {
   const prefs = getPrefs(context)
   const ids = readScheduleIds(prefs)
   if (ids.indexOf(id) < 0) ids.push(id)
@@ -176,6 +189,7 @@ function saveScheduleMeta(context : Context, id : string, triggerAt : number, ti
     .putString(scheduleKey(id, "title"), title)
     .putString(scheduleKey(id, "content"), content)
     .putString(scheduleKey(id, "payload"), payload)
+    .putString(scheduleKey(id, "repeatDays"), repeatDays.toLong().toString())
     .putString(SCHEDULE_INDEX_KEY, ids.join("\n"))
     .apply()
 }
@@ -189,17 +203,19 @@ function removeScheduleMeta(context : Context, id : string) : void {
     .remove(scheduleKey(id, "title"))
     .remove(scheduleKey(id, "content"))
     .remove(scheduleKey(id, "payload"))
+    .remove(scheduleKey(id, "repeatDays"))
     .putString(SCHEDULE_INDEX_KEY, ids.join("\n"))
     .apply()
 }
 
-function registerAlarm(context : Context, id : string, triggerAt : number, title : string, content : string, payload : string) : void {
+function registerAlarm(context : Context, id : string, triggerAt : number, title : string, content : string, payload : string, repeatDays : number) : void {
   const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
   intent.setAction(ACTION_FIRE)
   intent.putExtra("id", id)
   intent.putExtra("title", title)
   intent.putExtra("content", content)
   intent.putExtra("payload", payload)
+  intent.putExtra("repeatDays", repeatDays.toInt())
 
   const pendingIntent = PendingIntent.getBroadcast(
     context,
@@ -236,19 +252,35 @@ function cancelAlarm(context : Context, id : string) : void {
 function restoreSchedules(context : Context) : void {
   const prefs = getPrefs(context)
   const ids = readScheduleIds(prefs)
-  const now = System.currentTimeMillis()
+  const now = parseInt(System.currentTimeMillis().toString(), 10)
 
   for (const id of ids) {
-    const at = parseInt(prefs.getString(scheduleKey(id, "at"), "") ?? "", 10)
-    if (!(at.toLong() > now)) {
+    let at = parseInt(prefs.getString(scheduleKey(id, "at"), "") ?? "", 10)
+    const repeatDays = parseInt(prefs.getString(scheduleKey(id, "repeatDays"), "0") ?? "0", 10)
+
+    if (!(at > 0)) {
       removeScheduleMeta(context, id)
       continue
     }
+
+    if (repeatDays > 0) {
+      // 重复提醒：如果错过若干周期，直接推进到下一个未来时间点
+      if (at <= now) {
+        const interval = repeatDays * 86400000
+        const missed = now - at
+        at = at + (Math.floor(missed / interval) + 1) * interval
+      }
+    } else if (at <= now) {
+      removeScheduleMeta(context, id)
+      continue
+    }
+
     const title = prefs.getString(scheduleKey(id, "title"), "商品到期提醒") ?? "商品到期提醒"
     const content = prefs.getString(scheduleKey(id, "content"), "") ?? ""
     const payload = prefs.getString(scheduleKey(id, "payload"), "") ?? ""
     try {
-      registerAlarm(context, id, at, title, content, payload)
+      registerAlarm(context, id, at, title, content, payload, repeatDays)
+      saveScheduleMeta(context, id, at, title, content, payload, repeatDays)
     } catch (e) {
       console.log("[helper-alarm] 恢复排程失败: " + e)
     }
@@ -363,13 +395,13 @@ export function notifyNow(title : string, content : string, payload : string) : 
   showNotification(context, uniqueId, title, content, payload)
 }
 
-export function schedule(id : string, triggerAt : number, title : string, content : string, payload : string) : void {
+export function schedule(id : string, triggerAt : number, title : string, content : string, payload : string, repeatDays : number) : void {
   const context = UTSAndroid.getAppContext()
   if (context == null) return
 
-  registerAlarm(context, id, triggerAt, title, content, payload)
+  registerAlarm(context, id, triggerAt, title, content, payload, repeatDays)
   // 持久化一份，供设备重启后由 BootReceiver 恢复
-  saveScheduleMeta(context, id, triggerAt, title, content, payload)
+  saveScheduleMeta(context, id, triggerAt, title, content, payload, repeatDays)
 }
 
 export function cancel(id : string) : void {

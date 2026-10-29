@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS = {
   notifyTime: '09:00',
   notifyEnabled: true,
   permissionPrompted: false,
+  overdueRepeatDays: 0,
   theme: 'auto',
   lastBackupAt: 0
 }

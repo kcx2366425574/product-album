@@ -12,7 +12,7 @@ export function requestPermission(callback) {
 
 export function notifyNow() {}
 
-export function schedule() {}
+export function schedule(id, at, title, content, payload, repeatDays) {}
 
 export function cancel() {}
 

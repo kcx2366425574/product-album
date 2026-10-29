@@ -8,7 +8,7 @@
  *
  * 去重 key 里带 expiryDate，所以续费（到期日变化）后会重新提醒。
  */
-import { atTimeOfDay, todayStr } from '@/utils/date'
+import { atTimeOfDay, daysBetween, formatDate, todayStr } from '@/utils/date'
 import { daysLeft, effectiveReminderDays, offsetDateStr } from './expiry'
 import { loadNotifyRecords, saveNotifyRecords } from './db'
 import * as notify from './notify'
@@ -36,8 +36,9 @@ function expiredKey(product) {
  * 计算当前所有"应当提醒"的项。
  * @returns {Array<{product, type:'advance'|'expiry'|'expired', days:number, key:string}>}
  */
-export function collectDue(products, settings, today = todayStr()) {
+export function collectDue(products, settings, today = todayStr(), records = {}) {
   const defaultRd = Number(settings && settings.defaultReminderDays) || 0
+  const repeatDays = Number(settings && settings.overdueRepeatDays) || 0
   const due = []
 
   for (const p of products || []) {
@@ -46,7 +47,17 @@ export function collectDue(products, settings, today = todayStr()) {
     const dl = daysLeft(p.expiryDate, today)
 
     if (dl < 0) {
-      due.push({ product: p, type: 'expired', days: dl, key: expiredKey(p) })
+      const key = expiredKey(p)
+      if (repeatDays > 0) {
+        const last = Number(records[key]) || 0
+        const lastDate = last > 0 ? formatDate(new Date(last)) : ''
+        const shouldRepeat = !lastDate || daysBetween(lastDate, today) >= repeatDays
+        if (shouldRepeat) {
+          due.push({ product: p, type: 'expired', days: dl, key, repeat: true })
+        }
+      } else {
+        due.push({ product: p, type: 'expired', days: dl, key })
+      }
     } else if (dl === 0) {
       due.push({ product: p, type: 'expiry', days: 0, key: expiryKey(p) })
     } else if (dl <= rd) {
@@ -83,11 +94,12 @@ export function buildMessage(item) {
 export function runScan(products, settings, { today = todayStr(), mark = true } = {}) {
   if (!settings || settings.notifyEnabled === false) return { sent: [], pending: [] }
 
-  const all = collectDue(products, settings, today)
+  const records = loadNotifyRecords()
+  const all = collectDue(products, settings, today, records)
   if (!all.length) return { sent: [], pending: [] }
 
-  const records = loadNotifyRecords()
-  const todo = all.filter(d => !records[d.key])
+  // 逾期重复提醒即使已有记录，只要到了间隔也允许再次发送
+  const todo = all.filter(d => d.repeat || !records[d.key])
   if (!todo.length) return { sent: [], pending: [] }
 
   const sent = []
@@ -133,9 +145,14 @@ export function markDelivered(ids) {
  * 生成未来一段时间内的定时提醒条目。
  * @returns {Array<{id, at, title, content, payload}>}
  */
-export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = Date.now() } = {}) {
+export function buildSchedule(
+  products,
+  settings,
+  { days = SCHEDULE_DAYS, now = Date.now(), today = todayStr() } = {}
+) {
   if (!settings || settings.notifyEnabled === false) return []
   const defaultRd = Number(settings.defaultReminderDays) || 0
+  const repeatDays = Number(settings.overdueRepeatDays) || 0
   const notifyTime = settings.notifyTime || '09:00'
   const until = now + days * DAY_MS
   const entries = []
@@ -161,6 +178,34 @@ export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = 
         ...buildMessage(item)
       })
     }
+
+    // 逾期重复：排下一次提醒，原生闹钟触发后会按 repeatDays 自行续排
+    if (repeatDays > 0) {
+      const daysExpired = daysBetween(p.expiryDate, today)
+      let cycle = daysExpired > 0 ? Math.max(1, Math.floor(daysExpired / repeatDays)) : 1
+      let overdueAt = atTimeOfDay(
+        offsetDateStr(p.expiryDate, cycle * repeatDays, 'day'),
+        notifyTime
+      )
+      if (overdueAt <= now) {
+        cycle += Math.floor((now - overdueAt) / (repeatDays * DAY_MS)) + 1
+        overdueAt = atTimeOfDay(
+          offsetDateStr(p.expiryDate, cycle * repeatDays, 'day'),
+          notifyTime
+        )
+      }
+
+      if (overdueAt > now && overdueAt <= until) {
+        entries.push({
+          id: expiredKey(p),
+          at: overdueAt,
+          title: '商品到期提醒',
+          content: `「${p.name}」已过期，记得续费`,
+          payload: { productId: p.id, type: 'expired', expiryDate: p.expiryDate },
+          repeatDays
+        })
+      }
+    }
   }
 
   // 越早的提醒越重要，超出上限时优先保留最近的
@@ -174,7 +219,10 @@ export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = 
  */
 export function reschedule(products, settings) {
   const records = loadNotifyRecords()
-  const entries = buildSchedule(products, settings).filter(e => !records[e.id])
+  // 逾期重复条目即使已有记录也要排下一次
+  const entries = buildSchedule(products, settings).filter(
+    e => e.repeatDays > 0 || !records[e.id]
+  )
   const ok = notify.scheduleAll(entries)
   return { count: entries.length, native: ok }
 }

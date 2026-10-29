@@ -40,6 +40,16 @@
               <view class="row-value num">{{ state.settings.notifyTime }}</view>
             </picker>
           </view>
+
+          <view class="row">
+            <view class="row-main">
+              <text class="row-title">逾期重复</text>
+              <text class="row-sub">商品过期后按这个间隔继续提醒</text>
+            </view>
+            <picker mode="selector" :range="repeatLabels" :value="repeatIndex" @change="onRepeatChange">
+              <view class="row-value">{{ repeatLabel }}</view>
+            </picker>
+          </view>
         </view>
       </view>
 
@@ -284,6 +294,26 @@ function changeReminderDays(delta) {
 
 function onTimeChange(e) {
   persist({ notifyTime: e.detail.value })
+}
+
+const REPEAT_OPTIONS = [
+  { value: 0, label: '不重复' },
+  { value: 1, label: '每天' },
+  { value: 3, label: '每 3 天' },
+  { value: 7, label: '每周' }
+]
+const repeatLabels = REPEAT_OPTIONS.map(item => item.label)
+const repeatIndex = computed(() => {
+  const index = REPEAT_OPTIONS.findIndex(
+    item => item.value === Number(state.settings.overdueRepeatDays || 0)
+  )
+  return index >= 0 ? index : 0
+})
+const repeatLabel = computed(() => REPEAT_OPTIONS[repeatIndex.value].label)
+
+function onRepeatChange(e) {
+  const item = REPEAT_OPTIONS[Number(e.detail.value)]
+  if (item) persist({ overdueRepeatDays: item.value })
 }
 
 async function requestPermission() {
