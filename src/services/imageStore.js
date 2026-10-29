@@ -119,7 +119,7 @@ function drawJpeg(img, size, quality) {
   return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
 }
 
-async function importOne(tempPath, file) {
+async function importOneH5(tempPath, file) {
   let source = file
   if (!(source instanceof Blob)) {
     const resp = await fetch(tempPath)
@@ -159,9 +159,17 @@ async function importOne(tempPath, file) {
   }
 }
 
+/** 从备份的 data URL 恢复一张图片，返回新的图片元数据 */
+async function importFromDataUrlH5(dataUrl) {
+  const resp = await fetch(dataUrl)
+  const blob = await resp.blob()
+  if (!blob || !blob.size) return null
+  return importOneH5('', blob)
+}
+
 const urlCache = new Map()
 
-export async function resolveImageUrl(meta, options = {}) {
+async function resolveImageUrlH5(meta, options = {}) {
   if (!meta || !meta.id) return ''
   const wantThumb = !!(options && options.thumb)
   const key = wantThumb && meta.thumbId ? meta.thumbId : meta.id
@@ -180,7 +188,7 @@ export async function resolveImageUrl(meta, options = {}) {
   }
 }
 
-export async function removeImage(meta) {
+async function removeImageH5(meta) {
   if (!meta || !meta.id) return
   const keys = [meta.id, meta.thumbId].filter(Boolean)
   for (const key of keys) {
@@ -197,7 +205,7 @@ export async function removeImage(meta) {
   }
 }
 
-export async function imageToDataUrl(meta) {
+async function imageToDataUrlH5(meta) {
   if (!meta || !meta.id) return ''
   const blob = await idbGet(meta.id)
   if (!blob) return ''
@@ -258,7 +266,7 @@ function getFileSizeApp(filePath) {
   })
 }
 
-async function importOne(tempPath) {
+async function importOneApp(tempPath) {
   const id = makeId('img')
   let finalPath = await compressAppImage(tempPath, id)
   if (!finalPath) finalPath = await saveFileApp(tempPath)
@@ -283,7 +291,70 @@ async function importOne(tempPath) {
   }
 }
 
-export async function resolveImageUrl(meta, options = {}) {
+function dataUrlToBlob(dataUrl) {
+  const [head, body] = String(dataUrl || '').split(',')
+  const mimeMatch = /data:([^;]+)/.exec(head || '')
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg'
+  const binary = atob(body || '')
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+function writeBlobApp(blob, fileName) {
+  return new Promise((resolve, reject) => {
+    plus.io.resolveLocalFileSystemURL(
+      '_doc/',
+      dir => {
+        dir.getFile(
+          fileName,
+          { create: true },
+          entry => {
+            entry.createWriter(
+              writer => {
+                writer.onwrite = () => resolve(entry.toLocalURL())
+                writer.onerror = err => reject(err)
+                writer.write(blob)
+              },
+              err => reject(err)
+            )
+          },
+          err => reject(err)
+        )
+      },
+      err => reject(err)
+    )
+  })
+}
+
+/** 从备份的 data URL 恢复一张图片，返回新的图片元数据 */
+async function importFromDataUrlApp(dataUrl) {
+  const id = makeId('img')
+  const blob = dataUrlToBlob(dataUrl)
+  if (!blob.size) return null
+
+  const path = await writeBlobApp(blob, `pa_${id}.jpg`)
+  const info = await getImageInfoApp(path)
+  const size = await getFileSizeApp(path)
+  const thumbPath = await compressAppImage(path, id, {
+    suffix: '_thumb',
+    maxSide: THUMB_SIDE,
+    quality: 75
+  })
+
+  return {
+    id,
+    w: info.width || 0,
+    h: info.height || 0,
+    size,
+    path,
+    thumbPath,
+    thumbW: 0,
+    thumbH: 0
+  }
+}
+
+async function resolveImageUrlApp(meta, options = {}) {
   if (!meta) return ''
   if (options && options.thumb && meta.thumbPath) return meta.thumbPath
   return meta.path || ''
@@ -299,13 +370,13 @@ function removeFileApp(path) {
   })
 }
 
-export function removeImage(meta) {
+function removeImageApp(meta) {
   if (!meta) return Promise.resolve()
   const paths = [meta.path, meta.thumbPath].filter(Boolean)
   return Promise.all(paths.map(removeFileApp))
 }
 
-export async function imageToDataUrl(meta) {
+async function imageToDataUrlApp(meta) {
   return new Promise(resolve => {
     if (!meta || !meta.path) {
       resolve('')
@@ -329,3 +400,52 @@ export async function imageToDataUrl(meta) {
   })
 }
 // #endif
+
+/* ------------------------------------------------------------------ */
+/* 统一导出：按平台选择实现（条件编译在构建时裁剪）                    */
+/* ------------------------------------------------------------------ */
+
+function importOne(tempPath, file) {
+  // #ifdef H5
+  return importOneH5(tempPath, file)
+  // #endif
+  // #ifdef APP-PLUS
+  return importOneApp(tempPath)
+  // #endif
+}
+
+export function importFromDataUrl(dataUrl) {
+  // #ifdef H5
+  return importFromDataUrlH5(dataUrl)
+  // #endif
+  // #ifdef APP-PLUS
+  return importFromDataUrlApp(dataUrl)
+  // #endif
+}
+
+export function resolveImageUrl(meta, options = {}) {
+  // #ifdef H5
+  return resolveImageUrlH5(meta, options)
+  // #endif
+  // #ifdef APP-PLUS
+  return resolveImageUrlApp(meta, options)
+  // #endif
+}
+
+export function removeImage(meta) {
+  // #ifdef H5
+  return removeImageH5(meta)
+  // #endif
+  // #ifdef APP-PLUS
+  return removeImageApp(meta)
+  // #endif
+}
+
+export function imageToDataUrl(meta) {
+  // #ifdef H5
+  return imageToDataUrlH5(meta)
+  // #endif
+  // #ifdef APP-PLUS
+  return imageToDataUrlApp(meta)
+  // #endif
+}
