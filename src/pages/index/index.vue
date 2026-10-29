@@ -83,9 +83,27 @@
       </view>
     </view>
 
+    <scroll-view v-if="categories.length" class="cat-row" scroll-x>
+      <view class="cat-chip" :class="{ active: !state.category }" @tap="setCategory('')">全部</view>
+      <view
+        v-for="item in categories"
+        :key="item.name"
+        class="cat-chip"
+        :class="{ active: state.category === item.name }"
+        @tap="setCategory(item.name)"
+      >
+        {{ item.name }}<text class="cat-count">{{ item.count }}</text>
+      </view>
+    </scroll-view>
+
     <view class="list-head container">
       <text class="list-title">{{ filterLabel }}</text>
-      <text class="list-count">{{ list.length }} 件</text>
+      <view class="list-side">
+        <text class="list-count">{{ list.length }} 件</text>
+        <picker mode="selector" :range="sortLabels" :value="sortIndex" @change="onSortChange">
+          <view class="sort-btn">{{ sortLabel }}<text class="sort-caret">▾</text></view>
+        </picker>
+      </view>
     </view>
 
     <view v-if="list.length" class="grid container">
@@ -124,12 +142,20 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ProductCard from '@/components/ProductCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import { dueItems, filteredProducts, initStore, state, stats } from '@/store/app'
+import { categories, dueItems, filteredProducts, initStore, state, stats } from '@/store/app'
 import { ensurePermission, getPermissionState } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
+import { SORT_OPTIONS } from '@/services/filters'
 import { themeClass } from '@/store/theme'
 
 const list = computed(() => filteredProducts.value)
+
+const sortLabels = SORT_OPTIONS.map(item => item.label)
+const sortIndex = computed(() => {
+  const index = SORT_OPTIONS.findIndex(item => item.value === state.sort)
+  return index >= 0 ? index : 0
+})
+const sortLabel = computed(() => SORT_OPTIONS[sortIndex.value].label)
 const isApp = ref(false)
 const permissionState = ref('granted')
 
@@ -176,6 +202,15 @@ function setFilter(f) {
   state.filter = f
 }
 
+function setCategory(name) {
+  state.category = state.category === name ? '' : name
+}
+
+function onSortChange(event) {
+  const item = SORT_OPTIONS[Number(event.detail.value)]
+  if (item) state.sort = item.value
+}
+
 function clearKeyword() {
   state.keyword = ''
 }
@@ -183,6 +218,8 @@ function clearKeyword() {
 function resetFilter() {
   state.keyword = ''
   state.filter = 'all'
+  state.category = ''
+  state.sort = 'expiry'
 }
 
 function goDetail(product) {
@@ -488,11 +525,70 @@ function goCalendar() {
   color: rgba(255, 255, 255, 0.86);
 }
 
+.cat-row {
+  white-space: nowrap;
+  padding: 0 32rpx;
+  margin-top: 28rpx;
+}
+
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 12rpx 24rpx;
+  margin-right: 12rpx;
+  border-radius: 999rpx;
+  background: var(--surface);
+  border: 2rpx solid var(--line);
+  font-size: 24rpx;
+  color: var(--ink-2);
+}
+
+.cat-chip.active {
+  background: var(--brand-soft);
+  border-color: transparent;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.cat-count {
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  color: var(--ink-3);
+}
+
+.cat-chip.active .cat-count {
+  color: var(--brand);
+  opacity: 0.7;
+}
+
+.list-side {
+  display: flex;
+  align-items: center;
+}
+
+.sort-btn {
+  display: flex;
+  align-items: center;
+  margin-left: 16rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 12rpx;
+  background: var(--surface);
+  border: 2rpx solid var(--line);
+  font-size: 24rpx;
+  color: var(--ink-2);
+}
+
+.sort-caret {
+  margin-left: 6rpx;
+  font-size: 18rpx;
+  color: var(--ink-3);
+}
+
 .list-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-top: 44rpx;
+  margin-top: 36rpx;
   margin-bottom: 20rpx;
 }
 

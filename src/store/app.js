@@ -4,12 +4,15 @@
 import { computed, reactive } from 'vue'
 import * as db from '@/services/db'
 import { STATUS, daysLeft, effectiveReminderDays, statusOf } from '@/services/expiry'
+import { categorySummary, sortProducts } from '@/services/filters'
 import { todayStr } from '@/utils/date'
 
 export const state = reactive({
   products: [],
   settings: db.loadSettings(),
   filter: 'all', // all | soon | expired | normal
+  category: '',
+  sort: 'expiry', // expiry | updated | name
   keyword: '',
   inited: false,
   // 响应式的"今天"，跨午夜后由 refreshToday() 更新，驱动所有派生数据重算
@@ -67,12 +70,18 @@ export const stats = computed(() => {
 })
 
 /** 首页当前筛选条件下的列表 */
+export const categories = computed(() => categorySummary(state.products))
+
 export const filteredProducts = computed(() => {
   const today = state.today
   const rd = state.settings.defaultReminderDays
   const kw = String(state.keyword || '').trim().toLowerCase()
 
   let list = state.products.slice()
+
+  if (state.category) {
+    list = list.filter(p => String(p.category || '').trim() === state.category)
+  }
 
   if (state.filter !== 'all') {
     list = list.filter(p => {
@@ -93,14 +102,7 @@ export const filteredProducts = computed(() => {
     )
   }
 
-  list.sort((a, b) => {
-    const da = daysLeft(a.expiryDate, today)
-    const db_ = daysLeft(b.expiryDate, today)
-    if (da !== db_) return da - db_
-    return b.updatedAt - a.updatedAt
-  })
-
-  return list
+  return sortProducts(list, state.sort, today)
 })
 
 /** 首页顶部横幅：需要用户处理的到期项 */
