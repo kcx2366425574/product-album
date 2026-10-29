@@ -107,7 +107,7 @@
     </view>
 
     <view v-if="list.length" class="grid container">
-      <view v-for="p in list" :key="p.id" class="card-wrap">
+      <view v-for="p in visibleList" :key="p.id" class="card-wrap">
         <ProductCard
           :product="p"
           :default-reminder-days="state.settings.defaultReminderDays"
@@ -115,6 +115,10 @@
           @open="goDetail"
         />
       </view>
+    </view>
+
+    <view v-if="hasMore" class="load-more container" @tap="loadMore">
+      <text class="load-more-text">加载更多（还有 {{ list.length - visibleCount }} 件）</text>
     </view>
 
     <EmptyState
@@ -138,7 +142,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ProductCard from '@/components/ProductCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -148,7 +152,20 @@ import { reschedule } from '@/services/reminder'
 import { SORT_OPTIONS } from '@/services/filters'
 import { themeClass } from '@/store/theme'
 
+const PAGE_SIZE = 40
+
 const list = computed(() => filteredProducts.value)
+const visibleCount = ref(PAGE_SIZE)
+const visibleList = computed(() => list.value.slice(0, visibleCount.value))
+const hasMore = computed(() => list.value.length > visibleCount.value)
+
+// 搜索/筛选/排序变化时回到第一页
+watch(
+  () => [state.keyword, state.filter, state.category, state.sort],
+  () => {
+    visibleCount.value = PAGE_SIZE
+  }
+)
 
 const sortLabels = SORT_OPTIONS.map(item => item.label)
 const sortIndex = computed(() => {
@@ -209,6 +226,10 @@ function setCategory(name) {
 function onSortChange(event) {
   const item = SORT_OPTIONS[Number(event.detail.value)]
   if (item) state.sort = item.value
+}
+
+function loadMore() {
+  visibleCount.value += PAGE_SIZE
 }
 
 function clearKeyword() {
@@ -613,6 +634,21 @@ function goCalendar() {
 .card-wrap {
   width: 50%;
   padding: 0 12rpx 24rpx;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 8rpx 32rpx 32rpx;
+}
+
+.load-more-text {
+  padding: 16rpx 40rpx;
+  border-radius: 999rpx;
+  background: var(--surface);
+  border: 2rpx solid var(--line);
+  font-size: 24rpx;
+  color: var(--ink-2);
 }
 
 .none {
