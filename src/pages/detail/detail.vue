@@ -1,6 +1,6 @@
 <template>
   <view class="page" :class="themeClass">
-    <NavBar :title="product ? '商品详情' : '商品详情'">
+    <NavBar title="商品详情">
       <template #right>
         <text v-if="product" class="nav-action" @tap="goEdit">编辑</text>
       </template>

@@ -154,7 +154,7 @@
         <view class="group-card">
           <view class="row">
             <text class="row-title">版本</text>
-            <text class="row-value num">1.0.0</text>
+            <text class="row-value num">{{ APP_VERSION }}</text>
           </view>
           <view class="row">
             <text class="row-title">用途</text>
@@ -193,6 +193,7 @@ import {
 } from '@/services/backup'
 import { formatDateTime } from '@/utils/date'
 import { themeClass } from '@/store/theme'
+import { APP_VERSION } from '@/utils/appInfo'
 
 const spend = computed(() => spendSummary(state.products, state.today))
 const lastBackupText = computed(() =>
