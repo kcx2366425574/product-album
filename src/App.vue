@@ -110,7 +110,11 @@ function handleLaunchPayload() {
   if (!payload || !payload.productId) return
   launchPayloadHandled = true
   setTimeout(() => {
-    uni.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(payload.productId)}` })
+    // 到期/已过期的通知直接打开续费面板，提前提醒只进入详情
+    const renew = payload.type === 'expiry' || payload.type === 'expired' ? '&renew=1' : ''
+    uni.navigateTo({
+      url: `/pages/detail/detail?id=${encodeURIComponent(payload.productId)}${renew}`
+    })
   }, 300)
 }
 

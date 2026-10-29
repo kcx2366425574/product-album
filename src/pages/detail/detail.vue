@@ -231,9 +231,11 @@ async function refresh() {
   imageUrls.value = await Promise.all(p.images.map(m => resolveImageUrl(m)))
 }
 
-onLoad(options => {
+onLoad(async options => {
   productId.value = (options && options.id) || ''
-  refresh()
+  await refresh()
+  // 从"到期/已过期"通知进入时自动打开续费面板
+  if (product.value && options && options.renew === '1') openRenew()
 })
 
 onShow(() => {
