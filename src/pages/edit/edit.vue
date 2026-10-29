@@ -1,5 +1,5 @@
 <template>
-  <view class="page edit-page">
+  <view class="page edit-page" :class="themeClass">
     <NavBar :title="isEdit ? '编辑商品' : '新建商品'" />
 
     <view class="container">
@@ -134,6 +134,7 @@ import { importFromChooseResult, removeImage, resolveImageUrl } from '@/services
 import { reschedule } from '@/services/reminder'
 import { saveProduct, state } from '@/store/app'
 import { DURATION_UNITS, computeExpiryWithRenewals } from '@/services/expiry'
+import { themeClass } from '@/store/theme'
 import { makeId } from '@/utils/id'
 import { todayStr } from '@/utils/date'
 

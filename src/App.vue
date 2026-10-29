@@ -173,6 +173,37 @@ swiper {
   padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
 }
 
+/* 深色主题：变量挂在页面根节点，所有子元素继承 */
+.page.theme-dark {
+  --bg: #121512;
+  --surface: #1b201c;
+  --surface-2: #232a25;
+  --ink: #eef2ee;
+  --ink-2: #b7c0b9;
+  --ink-3: #7f8a82;
+  --line: #303832;
+  --brand: #4f8f70;
+  --brand-dark: #427a5f;
+  --brand-soft: #1e3329;
+  --warn: #e0a063;
+  --warn-soft: #382a19;
+  --danger: #e08078;
+  --danger-soft: #3a201d;
+  --shadow: 0 10rpx 34rpx rgba(0, 0, 0, 0.32);
+
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.theme-dark .bar,
+.theme-dark .cd-bar {
+  background: #2b332d;
+}
+
+.theme-dark .cover-fallback {
+  background: linear-gradient(150deg, #20261f 0%, #1a201b 100%);
+}
+
 .container {
   padding-left: 32rpx;
   padding-right: 32rpx;

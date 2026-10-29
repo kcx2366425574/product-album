@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page" :class="themeClass">
     <view class="nav">
       <view class="nav-inner">
         <view class="brand">
@@ -127,6 +127,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import { dueItems, filteredProducts, initStore, state, stats } from '@/store/app'
 import { ensurePermission, getPermissionState } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
+import { themeClass } from '@/store/theme'
 
 const list = computed(() => filteredProducts.value)
 const isApp = ref(false)

@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page" :class="themeClass">
     <NavBar :title="product ? '商品详情' : '商品详情'">
       <template #right>
         <text v-if="product" class="nav-action" @tap="goEdit">编辑</text>
@@ -159,6 +159,7 @@ import { getProduct } from '@/services/db'
 import { removeImage, resolveImageUrl } from '@/services/imageStore'
 import { reschedule } from '@/services/reminder'
 import { productSpend } from '@/services/stats'
+import { themeClass } from '@/store/theme'
 import {
   DURATION_UNITS,
   STATUS_TEXT,

@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page" :class="themeClass">
     <NavBar title="到期日历" />
 
     <view class="container">
@@ -67,6 +67,7 @@ import { initStore, state } from '@/store/app'
 import { WEEKDAYS, buildMonthGrid, groupExpiries, monthExpiryCount } from '@/services/calendar'
 import { daysLeft, statusOf } from '@/services/expiry'
 import { pad2 } from '@/utils/date'
+import { themeClass } from '@/store/theme'
 
 const initial = new Date()
 const year = ref(initial.getFullYear())

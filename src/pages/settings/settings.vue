@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page" :class="themeClass">
     <NavBar title="设置" />
 
     <view class="container">
@@ -74,6 +74,21 @@
             <view class="perm-pill" :class="exactAlarmReady ? 'granted' : 'denied'">
               {{ exactAlarmReady ? '已授权' : '去授权' }}
             </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="group">
+        <text class="group-title">外观</text>
+        <view class="group-card">
+          <view class="row">
+            <view class="row-main">
+              <text class="row-title">主题</text>
+              <text class="row-sub">跟随系统时会随手机的深色模式自动切换</text>
+            </view>
+            <picker mode="selector" :range="themeLabels" :value="themeIndex" @change="onThemeChange">
+              <view class="row-value">{{ themeLabel }}</view>
+            </picker>
           </view>
         </view>
       </view>
@@ -177,11 +192,29 @@ import {
   prepareImport
 } from '@/services/backup'
 import { formatDateTime } from '@/utils/date'
+import { themeClass } from '@/store/theme'
 
 const spend = computed(() => spendSummary(state.products, state.today))
 const lastBackupText = computed(() =>
   state.settings.lastBackupAt ? formatDateTime(state.settings.lastBackupAt) : ''
 )
+
+const THEMES = [
+  { value: 'auto', label: '跟随系统' },
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' }
+]
+const themeLabels = THEMES.map(item => item.label)
+const themeIndex = computed(() => {
+  const index = THEMES.findIndex(item => item.value === (state.settings.theme || 'auto'))
+  return index >= 0 ? index : 0
+})
+const themeLabel = computed(() => THEMES[themeIndex.value].label)
+
+function onThemeChange(event) {
+  const item = THEMES[Number(event.detail.value)]
+  if (item) persist({ theme: item.value })
+}
 
 function money(value) {
   const n = Number(value) || 0
