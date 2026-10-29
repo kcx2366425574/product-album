@@ -108,12 +108,30 @@
             <text class="row-title">商品数量</text>
             <text class="row-value num">{{ state.products.length }} 件</text>
           </view>
+          <view class="row row-action" @tap="exportBackup">
+            <view class="row-main">
+              <text class="row-title">导出备份</text>
+              <text class="row-sub">商品、图片、续费记录和设置打包为一个 JSON 文件</text>
+            </view>
+            <text class="row-arrow">›</text>
+          </view>
+          <view class="row row-action" @tap="doImportBackup">
+            <view class="row-main">
+              <text class="row-title">从备份导入</text>
+              <text class="row-sub">会覆盖当前全部数据，适合换手机或重装</text>
+            </view>
+            <text class="row-arrow">›</text>
+          </view>
+          <view v-if="state.settings.lastBackupAt" class="row">
+            <text class="row-title">上次备份</text>
+            <text class="row-value num">{{ lastBackupText }}</text>
+          </view>
           <view class="row row-action" @tap="clearAll">
             <text class="row-action-text danger">清空所有数据</text>
             <text class="row-arrow">›</text>
           </view>
         </view>
-        <text class="group-note">数据只保存在本机，卸载 App 会一起清除。</text>
+        <text class="group-note">数据只保存在本机，卸载 App 会一起清除，建议定期导出备份。</text>
       </view>
 
       <view class="group">
@@ -138,7 +156,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import NavBar from '@/components/NavBar.vue'
-import { reloadProducts, state, updateSettings } from '@/store/app'
+import { initStore, reloadProducts, state, updateSettings } from '@/store/app'
 import { removeImage } from '@/services/imageStore'
 import {
   cancelAll,
@@ -149,10 +167,21 @@ import {
   openExactAlarmSettings
 } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
-import { saveNotifyRecords, saveProducts } from '@/services/db'
+import { saveNotifyRecords, saveProducts, saveSettings } from '@/services/db'
 import { spendSummary } from '@/services/stats'
+import {
+  createBackup,
+  downloadBackupFile,
+  parseBackup,
+  pickBackupFile,
+  prepareImport
+} from '@/services/backup'
+import { formatDateTime } from '@/utils/date'
 
 const spend = computed(() => spendSummary(state.products, state.today))
+const lastBackupText = computed(() =>
+  state.settings.lastBackupAt ? formatDateTime(state.settings.lastBackupAt) : ''
+)
 
 function money(value) {
   const n = Number(value) || 0
@@ -227,6 +256,82 @@ async function requestPermission() {
   }
 }
 
+async function exportBackup() {
+  if (!state.products.length) {
+    uni.showToast({ title: '还没有商品可备份', icon: 'none' })
+    return
+  }
+
+  uni.showLoading({ title: '正在打包', mask: true })
+  try {
+    const backup = await createBackup(state.products, state.settings)
+    await downloadBackupFile(backup)
+    persist({ lastBackupAt: Date.now() })
+    uni.hideLoading()
+    uni.showToast({ title: '备份已导出', icon: 'success' })
+  } catch (e) {
+    uni.hideLoading()
+    console.error('[settings] 导出备份失败', e)
+    uni.showToast({ title: (e && e.message) || '导出失败', icon: 'none' })
+  }
+}
+
+function doImportBackup() {
+  uni.showModal({
+    title: '从备份导入',
+    content: '导入会覆盖当前全部商品、图片和设置，确定继续吗？',
+    confirmText: '导入',
+    confirmColor: '#B03A31',
+    success: async res => {
+      if (!res.confirm) return
+
+      let committed = false
+      let createdImages = []
+
+      try {
+        const text = await pickBackupFile()
+        const backup = parseBackup(text)
+        uni.showLoading({ title: '正在导入', mask: true })
+
+        // 导入可能包含很多图片，保持一个 loading 即可，不要重复 showLoading
+        const result = await prepareImport(backup)
+        createdImages = result.createdImages
+        const oldProducts = state.products.slice()
+
+        // 先写入商品数据，成功后再清理旧图片，避免导入失败时两头空
+        if (!saveProducts(result.products)) {
+          throw new Error('导入失败，请检查存储空间')
+        }
+        committed = true
+        saveSettings(result.settings)
+        saveNotifyRecords({})
+        initStore()
+        reschedule(state.products, state.settings)
+
+        for (const product of oldProducts) {
+          await Promise.all((product.images || []).map(image => removeImage(image)))
+        }
+
+        uni.hideLoading()
+        const failed = result.stats.failedImages
+        uni.showToast({
+          title: failed
+            ? `导入 ${result.products.length} 件，${failed} 张图失败`
+            : `已导入 ${result.products.length} 件商品`,
+          icon: 'none'
+        })
+      } catch (e) {
+        uni.hideLoading()
+        if (!committed) {
+          await Promise.all(createdImages.map(image => removeImage(image)))
+        }
+        console.error('[settings] 导入备份失败', e)
+        uni.showToast({ title: (e && e.message) || '导入失败', icon: 'none' })
+      }
+    }
+  })
+}
+
 function clearAll() {
   if (!state.products.length) {
     uni.showToast({ title: '没有数据可清空', icon: 'none' })
@@ -244,6 +349,7 @@ function clearAll() {
       try {
         // 先清数据，成功后再删图片，避免写入失败时图片已丢
         if (!saveProducts([])) {
+          uni.hideLoading()
           uni.showToast({ title: '清空失败，请重试', icon: 'none' })
           return
         }
@@ -253,9 +359,12 @@ function clearAll() {
         for (const p of products) {
           await Promise.all((p.images || []).map(m => removeImage(m)))
         }
-        uni.showToast({ title: '已清空', icon: 'success' })
-      } finally {
         uni.hideLoading()
+        uni.showToast({ title: '已清空', icon: 'success' })
+      } catch (e) {
+        uni.hideLoading()
+        console.error('[settings] 清空数据失败', e)
+        uni.showToast({ title: '清空失败，请重试', icon: 'none' })
       }
     }
   })

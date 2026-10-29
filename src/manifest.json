@@ -15,7 +15,9 @@
             "autoclose" : true,
             "delay" : 0
         },
-        "modules" : {},
+        "modules" : {
+            "Share" : {}
+        },
         "distribute" : {
             "android" : {
                 "minSdkVersion" : 24,
