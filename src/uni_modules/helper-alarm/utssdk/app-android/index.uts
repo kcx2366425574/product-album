@@ -19,6 +19,7 @@ import BroadcastReceiver from "android.content.BroadcastReceiver"
 import Notification from "android.app.Notification"
 import NotificationManager from "android.app.NotificationManager"
 import NotificationChannel from "android.app.NotificationChannel"
+import SharedPreferences from "android.content.SharedPreferences"
 import Build from "android.os.Build"
 import Settings from "android.provider.Settings"
 import PackageManager from "android.content.pm.PackageManager"
@@ -32,6 +33,29 @@ const CHANNEL_DESC : string = "商品使用期限到期提醒"
 const EXTRA_PAYLOAD : string = "pa_payload"
 const ACTION_FIRE : string = "uts.sdk.modules.helperAlarm.FIRE"
 const PENDING_FLAGS : number = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+const PREFS_NAME : string = "pa_alarm"
+const DELIVERED_KEY : string = "delivered_ids"
+const DELIVERED_MAX : number = 200
+
+function getPrefs(context : Context) : SharedPreferences {
+  return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+}
+
+/**
+ * 记录"已经真正弹出过通知"的排程 id。
+ * AlarmManager 触发时 App 进程可能不存在，无法直接写 JS 存储，
+ * 所以先落到 SharedPreferences，等下次 App 启动时由 JS 消费并写入去重表。
+ */
+function appendDelivered(context : Context, id : string) : void {
+  if (id.length == 0) return
+  const prefs = getPrefs(context)
+  const prev = prefs.getString(DELIVERED_KEY, "") ?? ""
+  const list = prev.split("\n").filter((s : string) : boolean => s.length > 0)
+  if (list.indexOf(id) >= 0) return
+  list.push(id)
+  const capped = list.length > DELIVERED_MAX ? list.slice(list.length - DELIVERED_MAX) : list
+  prefs.edit().putString(DELIVERED_KEY, capped.join("\n")).apply()
+}
 
 /** 字符串 → 稳定的正整数 ID（用于 requestCode / notificationId） */
 function hashId(id : string) : number {
@@ -113,6 +137,9 @@ export class AlarmReceiver extends BroadcastReceiver {
     const title = intent.getStringExtra("title") ?? "商品到期提醒"
     const content = intent.getStringExtra("content") ?? ""
     const payload = intent.getStringExtra("payload") ?? ""
+    // 没有通知权限时 notify() 不会展示，不能记为已送达，否则权限恢复后也不会补发
+    if (!isPermissionGranted()) return
+    appendDelivered(context, id)
     showNotification(context, id, title, content, payload)
   }
 }
@@ -221,6 +248,18 @@ export function cancel(id : string) : void {
   const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
   alarmManager.cancel(pendingIntent)
   pendingIntent.cancel()
+}
+
+/**
+ * 取出并清空原生侧记录的"已送达"排程 id，多个 id 用换行分隔。
+ */
+export function consumeDeliveredIds() : string {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return ""
+  const prefs = getPrefs(context)
+  const value = prefs.getString(DELIVERED_KEY, "") ?? ""
+  if (value.length > 0) prefs.edit().remove(DELIVERED_KEY).apply()
+  return value
 }
 
 export function consumeLaunchPayload() : string {

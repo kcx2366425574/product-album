@@ -7,7 +7,7 @@ vi.mock('@/services/notify', () => ({
 
 import { loadNotifyRecords } from '@/services/db'
 import { notifyNow } from '@/services/notify'
-import { runScan } from '@/services/reminder'
+import { markDelivered, runScan } from '@/services/reminder'
 
 const settings = { defaultReminderDays: 7, notifyTime: '09:00', notifyEnabled: true }
 
@@ -73,6 +73,36 @@ describe('runScan 去重记录', () => {
 
     expect(notifyNow).not.toHaveBeenCalled()
     expect(result.sent).toHaveLength(0)
+    expect(loadNotifyRecords()).toEqual({})
+  })
+})
+
+describe('markDelivered 原生送达回写', () => {
+  it('写入后 runScan 不再重复发送同一条提醒', () => {
+    const key = 'p1|2026-11-05|advance|7'
+
+    expect(markDelivered([key])).toBe(1)
+    expect(loadNotifyRecords()[key]).toBeTypeOf('number')
+
+    vi.mocked(notifyNow).mockReturnValue(true)
+    const result = runScan([product()], settings, { today: '2026-10-29' })
+
+    expect(notifyNow).not.toHaveBeenCalled()
+    expect(result.sent).toHaveLength(0)
+  })
+
+  it('忽略空 id，且不会覆盖已有记录', () => {
+    markDelivered(['a', 'a', ''])
+    const first = loadNotifyRecords()
+    expect(Object.keys(first)).toEqual(['a'])
+
+    expect(markDelivered(['a'])).toBe(0)
+    expect(loadNotifyRecords()).toEqual(first)
+  })
+
+  it('非数组入参安全返回 0', () => {
+    expect(markDelivered(null)).toBe(0)
+    expect(markDelivered(undefined)).toBe(0)
     expect(loadNotifyRecords()).toEqual({})
   })
 })

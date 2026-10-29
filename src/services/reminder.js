@@ -104,6 +104,29 @@ export function runScan(products, settings, { today = todayStr(), mark = true } 
 }
 
 /**
+ * 把原生侧已经送达的排程 id 写入去重表。
+ * 用于 App 启动时消费 AlarmReceiver 的送达记录，避免"通知已弹出 → 打开 App
+ * 又立即提醒一次"。
+ * @param {string[]} ids
+ * @returns {number} 新写入的记录数
+ */
+export function markDelivered(ids) {
+  const list = Array.isArray(ids) ? ids.filter(id => typeof id === 'string' && id) : []
+  if (!list.length) return 0
+
+  const records = loadNotifyRecords()
+  const now = Date.now()
+  let changed = 0
+  for (const id of list) {
+    if (records[id]) continue
+    records[id] = now
+    changed++
+  }
+  if (changed) saveNotifyRecords(records)
+  return changed
+}
+
+/**
  * 生成未来一段时间内的定时提醒条目。
  * @returns {Array<{id, at, title, content, payload}>}
  */

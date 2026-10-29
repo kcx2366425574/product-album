@@ -1,9 +1,9 @@
 <script setup>
 import { onLaunch, onShow } from '@dcloudio/uni-app'
 import { initStore, state } from '@/store/app'
-import { pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
+import { markDelivered, pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
 import { loadPromptRecord, savePromptRecord } from '@/services/db'
-import { consumeLaunchPayload } from '@/services/notify'
+import { consumeDeliveredIds, consumeLaunchPayload } from '@/services/notify'
 import { todayStr } from '@/utils/date'
 
 let lastScanAt = 0
@@ -15,6 +15,8 @@ function scanAndPrompt() {
   if (now - lastScanAt < 1500) return
   lastScanAt = now
   try {
+    // 先记下原生闹钟已经弹过的提醒，再扫描，避免同一条提醒重复弹出
+    markDelivered(consumeDeliveredIds())
     const { pending } = runScan(state.products, state.settings)
     reschedule(state.products, state.settings)
     pruneNotifyRecords(state.products)

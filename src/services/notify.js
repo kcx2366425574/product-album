@@ -15,6 +15,7 @@ import {
   notifyNow as nativeNotifyNow,
   schedule as nativeSchedule,
   cancel as nativeCancel,
+  consumeDeliveredIds as nativeConsumeDeliveredIds,
   consumeLaunchPayload as nativeConsumeLaunchPayload
 } from '@/uni_modules/helper-alarm'
 // #endif
@@ -181,6 +182,28 @@ export function hasNativeScheduler() {
   // #endif
   // #ifndef APP-PLUS
   return false
+  // #endif
+}
+
+/**
+ * 取出原生闹钟已经真正弹出过的排程 id。
+ * 原生接收器无法直接写 JS 存储，只能先存 SharedPreferences，由这里转交给
+ * reminder.markDelivered() 写入去重表，避免打开 App 时重复提醒。
+ * @returns {string[]}
+ */
+export function consumeDeliveredIds() {
+  // #ifdef APP-PLUS
+  try {
+    const raw = nativeConsumeDeliveredIds()
+    if (!raw) return []
+    return raw.split('\n').filter(Boolean)
+  } catch (e) {
+    console.warn('[notify] 读取已送达记录失败', e)
+    return []
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  return []
   // #endif
 }
 

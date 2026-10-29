@@ -16,6 +16,10 @@ export function schedule() {}
 
 export function cancel() {}
 
+export function consumeDeliveredIds() {
+  return ''
+}
+
 export function consumeLaunchPayload() {
   return ''
 }
