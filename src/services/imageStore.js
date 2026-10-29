@@ -9,6 +9,7 @@
  * 绝对不能把它持久化到商品数据里。
  */
 import { makeId } from '@/utils/id'
+import { isOversize } from '@/utils/limits'
 
 const MAX_SIDE = 1600
 const THUMB_SIDE = 480
@@ -137,6 +138,7 @@ async function importOneH5(tempPath, file) {
     const img = await loadImageEl(objectUrl)
     const fullSize = renderSize(img, MAX_SIDE)
     const fullBlob = (await drawJpeg(img, fullSize, JPEG_QUALITY)) || source
+    if (isOversize(fullBlob.size)) throw new Error('图片超过 8MB')
 
     const id = makeId('img')
     await idbPut(id, fullBlob)
@@ -278,6 +280,10 @@ async function importOneApp(tempPath) {
   if (!finalPath) finalPath = await saveFileApp(tempPath)
   const info = await getImageInfoApp(finalPath)
   const size = await getFileSizeApp(finalPath)
+  if (isOversize(size)) {
+    await removeFileApp(finalPath)
+    throw new Error('图片超过 8MB')
+  }
 
   const thumbPath = await compressAppImage(tempPath, id, {
     suffix: '_thumb',
