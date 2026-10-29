@@ -11,13 +11,24 @@ export const state = reactive({
   settings: db.loadSettings(),
   filter: 'all', // all | soon | expired | normal
   keyword: '',
-  inited: false
+  inited: false,
+  // 响应式的"今天"，跨午夜后由 refreshToday() 更新，驱动所有派生数据重算
+  today: todayStr()
 })
 
 export function initStore() {
   state.products = db.loadProducts()
   state.settings = db.loadSettings()
+  state.today = todayStr()
   state.inited = true
+}
+
+/** 日期变化时更新 state.today，返回是否发生了变化 */
+export function refreshToday() {
+  const today = todayStr()
+  if (state.today === today) return false
+  state.today = today
+  return true
 }
 
 export function reloadProducts() {
@@ -41,7 +52,7 @@ export function updateSettings(patch) {
 }
 
 export const stats = computed(() => {
-  const today = todayStr()
+  const today = state.today
   const rd = state.settings.defaultReminderDays
   const out = { total: 0, normal: 0, soon: 0, expired: 0 }
   for (const p of state.products) {
@@ -56,7 +67,7 @@ export const stats = computed(() => {
 
 /** 首页当前筛选条件下的列表 */
 export const filteredProducts = computed(() => {
-  const today = todayStr()
+  const today = state.today
   const rd = state.settings.defaultReminderDays
   const kw = String(state.keyword || '').trim().toLowerCase()
 
@@ -93,7 +104,7 @@ export const filteredProducts = computed(() => {
 
 /** 首页顶部横幅：需要用户处理的到期项 */
 export const dueItems = computed(() => {
-  const today = todayStr()
+  const today = state.today
   const rd = state.settings.defaultReminderDays
   const out = []
   for (const p of state.products) {

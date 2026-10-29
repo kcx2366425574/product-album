@@ -1,6 +1,6 @@
 <script setup>
 import { onLaunch, onShow } from '@dcloudio/uni-app'
-import { initStore, state, updateSettings } from '@/store/app'
+import { initStore, refreshToday, state, updateSettings } from '@/store/app'
 import { markDelivered, pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
 import { loadPromptRecord, savePromptRecord } from '@/services/db'
 import {
@@ -15,6 +15,17 @@ import { todayStr } from '@/utils/date'
 let lastScanAt = 0
 let launchPayloadHandled = false
 let permissionPrompting = false
+let dayTimer = null
+
+/** App 可能长时间停留在前台，跨午夜时刷新"今天"并补一次提醒扫描 */
+function startDayTimer() {
+  if (dayTimer) return
+  dayTimer = setInterval(() => {
+    if (!refreshToday()) return
+    lastScanAt = 0
+    scanAndPrompt()
+  }, 60 * 1000)
+}
 
 function scanAndPrompt() {
   const now = Date.now()
@@ -105,6 +116,7 @@ function handleLaunchPayload() {
 
 onLaunch(() => {
   initStore()
+  startDayTimer()
 })
 
 onShow(() => {

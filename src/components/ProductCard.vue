@@ -31,7 +31,8 @@ import { useImageUrl } from '@/composables/useImageUrl'
 
 const props = defineProps({
   product: { type: Object, required: true },
-  defaultReminderDays: { type: Number, default: 7 }
+  defaultReminderDays: { type: Number, default: 7 },
+  today: { type: String, default: '' }
 })
 
 defineEmits(['open'])
@@ -39,8 +40,8 @@ defineEmits(['open'])
 const cover = computed(() => props.product.images[props.product.coverIndex] || null)
 const coverUrl = useImageUrl(cover)
 
-const days = computed(() => daysLeft(props.product.expiryDate))
-const status = computed(() => statusOf(props.product, props.defaultReminderDays))
+const days = computed(() => daysLeft(props.product.expiryDate, props.today || undefined))
+const status = computed(() => statusOf(props.product, props.defaultReminderDays, props.today || undefined))
 
 const badgeText = computed(() => {
   if (days.value < 0) return '已过期'

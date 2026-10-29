@@ -90,6 +90,7 @@
         <ProductCard
           :product="p"
           :default-reminder-days="state.settings.defaultReminderDays"
+          :today="state.today"
           @open="goDetail"
         />
       </view>

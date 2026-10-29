@@ -169,9 +169,11 @@ const imageUrls = ref([])
 const showRenew = ref(false)
 const renew = reactive({ value: 30, unit: 'day', amount: '', note: '' })
 
-const days = computed(() => (product.value ? daysLeft(product.value.expiryDate) : 0))
+const days = computed(() =>
+  product.value ? daysLeft(product.value.expiryDate, state.today) : 0
+)
 const status = computed(() =>
-  product.value ? statusOf(product.value, state.settings.defaultReminderDays) : 'normal'
+  product.value ? statusOf(product.value, state.settings.defaultReminderDays, state.today) : 'normal'
 )
 const statusText = computed(() => STATUS_TEXT[status.value] || '')
 
