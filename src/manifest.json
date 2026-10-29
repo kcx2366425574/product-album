@@ -1,6 +1,6 @@
 {
     "name" : "商品图册",
-    "appid" : "",
+    "appid" : "__UNI__A6CF8BF",
     "description" : "离线保存商品图片，设置使用时长并到期提醒",
     "versionName" : "1.1.0",
     "versionCode" : "110",
@@ -37,7 +37,9 @@
                     "<uses-permission android:name=\"android.permission.RECEIVE_BOOT_COMPLETED\"/>"
                 ]
             },
-            "ios" : {},
+            "ios" : {
+                "dSYMs" : false
+            },
             "sdkConfigs" : {}
         }
     },
@@ -61,5 +63,7 @@
     "uniStatistics" : {
         "enable" : false
     },
-    "vueVersion" : "3"
+    "vueVersion" : "3",
+    "locale" : "zh-Hans",
+    "fallbackLocale" : "zh-Hans"
 }
