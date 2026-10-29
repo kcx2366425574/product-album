@@ -12,5 +12,14 @@
         <receiver
             android:name="uts.sdk.modules.helperAlarm.AlarmReceiver"
             android:exported="false" />
+        <!-- 设备重启 / 应用更新后恢复被系统清空的闹钟 -->
+        <receiver
+            android:name="uts.sdk.modules.helperAlarm.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

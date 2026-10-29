@@ -137,18 +137,146 @@ export class AlarmReceiver extends BroadcastReceiver {
     const title = intent.getStringExtra("title") ?? "商品到期提醒"
     const content = intent.getStringExtra("content") ?? ""
     const payload = intent.getStringExtra("payload") ?? ""
-    // 没有通知权限时 notify() 不会展示，不能记为已送达，否则权限恢复后也不会补发
-    if (!isPermissionGranted()) return
+    // 进程被杀后 UTSAndroid.getAppContext() 可能为空，这里必须用广播自带的 context
+    if (!notificationsEnabled(context)) return
     appendDelivered(context, id)
     showNotification(context, id, title, content, payload)
+  }
+}
+
+function notificationsEnabled(context : Context) : boolean {
+  const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+  return manager.areNotificationsEnabled()
+}
+
+/* ------------------------------------------------------------------ */
+/* 排程持久化：用于重启 / 应用更新后恢复 AlarmManager                    */
+/* ------------------------------------------------------------------ */
+
+const SCHEDULE_INDEX_KEY : string = "schedule_ids"
+
+function scheduleKey(id : string, field : string) : string {
+  return "s." + id + "." + field
+}
+
+function readScheduleIds(prefs : SharedPreferences) : string[] {
+  const raw = prefs.getString(SCHEDULE_INDEX_KEY, "") ?? ""
+  if (raw.length == 0) return []
+  return raw.split("\n").filter((s : string) : boolean => s.length > 0)
+}
+
+function saveScheduleMeta(context : Context, id : string, triggerAt : number, title : string, content : string, payload : string) : void {
+  const prefs = getPrefs(context)
+  const ids = readScheduleIds(prefs)
+  if (ids.indexOf(id) < 0) ids.push(id)
+
+  prefs.edit()
+    .putString(scheduleKey(id, "at"), triggerAt.toLong().toString())
+    .putString(scheduleKey(id, "title"), title)
+    .putString(scheduleKey(id, "content"), content)
+    .putString(scheduleKey(id, "payload"), payload)
+    .putString(SCHEDULE_INDEX_KEY, ids.join("\n"))
+    .apply()
+}
+
+function removeScheduleMeta(context : Context, id : string) : void {
+  const prefs = getPrefs(context)
+  const ids = readScheduleIds(prefs).filter((s : string) : boolean => s != id)
+
+  prefs.edit()
+    .remove(scheduleKey(id, "at"))
+    .remove(scheduleKey(id, "title"))
+    .remove(scheduleKey(id, "content"))
+    .remove(scheduleKey(id, "payload"))
+    .putString(SCHEDULE_INDEX_KEY, ids.join("\n"))
+    .apply()
+}
+
+function registerAlarm(context : Context, id : string, triggerAt : number, title : string, content : string, payload : string) : void {
+  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
+  intent.setAction(ACTION_FIRE)
+  intent.putExtra("id", id)
+  intent.putExtra("title", title)
+  intent.putExtra("content", content)
+  intent.putExtra("payload", payload)
+
+  const pendingIntent = PendingIntent.getBroadcast(
+    context,
+    hashId(id).toInt(),
+    intent,
+    PENDING_FLAGS.toInt()
+  )
+  const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+  try {
+    // Android 12+ 未授予精确闹钟权限时会抛 SecurityException，降级为非精确闹钟
+    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt.toLong(), pendingIntent)
+  } catch (e) {
+    console.log("[helper-alarm] 精确闹钟不可用，降级: " + e)
+    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt.toLong(), pendingIntent)
+  }
+}
+
+function cancelAlarm(context : Context, id : string) : void {
+  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
+  intent.setAction(ACTION_FIRE)
+  const pendingIntent = PendingIntent.getBroadcast(
+    context,
+    hashId(id).toInt(),
+    intent,
+    PENDING_FLAGS.toInt()
+  )
+  const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+  alarmManager.cancel(pendingIntent)
+  pendingIntent.cancel()
+}
+
+/** 设备重启后重新注册尚未到期的闹钟，过期的条目顺手清理 */
+function restoreSchedules(context : Context) : void {
+  const prefs = getPrefs(context)
+  const ids = readScheduleIds(prefs)
+  const now = System.currentTimeMillis()
+
+  for (const id of ids) {
+    const at = parseInt(prefs.getString(scheduleKey(id, "at"), "") ?? "", 10)
+    if (!(at.toLong() > now)) {
+      removeScheduleMeta(context, id)
+      continue
+    }
+    const title = prefs.getString(scheduleKey(id, "title"), "商品到期提醒") ?? "商品到期提醒"
+    const content = prefs.getString(scheduleKey(id, "content"), "") ?? ""
+    const payload = prefs.getString(scheduleKey(id, "payload"), "") ?? ""
+    try {
+      registerAlarm(context, id, at, title, content, payload)
+    } catch (e) {
+      console.log("[helper-alarm] 恢复排程失败: " + e)
+    }
+  }
+}
+
+/**
+ * 开机 / 应用更新后恢复排程。
+ * AlarmManager 的闹钟在设备重启后会被系统清空，只靠 App 启动重排会漏提醒。
+ */
+export class BootReceiver extends BroadcastReceiver {
+  constructor() {
+    super()
+  }
+
+  override onReceive(context : Context, intent : Intent) : void {
+    try {
+      if (!notificationsEnabled(context)) return
+      restoreSchedules(context)
+    } catch (e) {
+      console.log("[helper-alarm] 开机恢复排程失败: " + e)
+    }
   }
 }
 
 export function isPermissionGranted() : boolean {
   const context = UTSAndroid.getAppContext()
   if (context == null) return false
-  const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-  return manager.areNotificationsEnabled()
+  return notificationsEnabled(context)
 }
 
 export function requestPermission(callback : PermissionCallback) : void {
@@ -210,44 +338,16 @@ export function schedule(id : string, triggerAt : number, title : string, conten
   const context = UTSAndroid.getAppContext()
   if (context == null) return
 
-  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
-  intent.setAction(ACTION_FIRE)
-  intent.putExtra("id", id)
-  intent.putExtra("title", title)
-  intent.putExtra("content", content)
-  intent.putExtra("payload", payload)
-
-  const pendingIntent = PendingIntent.getBroadcast(
-    context,
-    hashId(id).toInt(),
-    intent,
-    PENDING_FLAGS.toInt()
-  )
-  const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-
-  try {
-    // Android 12+ 未授予精确闹钟权限时会抛 SecurityException，降级为非精确闹钟
-    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt.toLong(), pendingIntent)
-  } catch (e) {
-    console.log("[helper-alarm] 精确闹钟不可用，降级: " + e)
-    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt.toLong(), pendingIntent)
-  }
+  registerAlarm(context, id, triggerAt, title, content, payload)
+  // 持久化一份，供设备重启后由 BootReceiver 恢复
+  saveScheduleMeta(context, id, triggerAt, title, content, payload)
 }
 
 export function cancel(id : string) : void {
   const context = UTSAndroid.getAppContext()
   if (context == null) return
-  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmReceiver))
-  intent.setAction(ACTION_FIRE)
-  const pendingIntent = PendingIntent.getBroadcast(
-    context,
-    hashId(id).toInt(),
-    intent,
-    PENDING_FLAGS.toInt()
-  )
-  const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-  alarmManager.cancel(pendingIntent)
-  pendingIntent.cancel()
+  cancelAlarm(context, id)
+  removeScheduleMeta(context, id)
 }
 
 /**
