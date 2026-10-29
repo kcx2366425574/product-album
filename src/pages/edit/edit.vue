@@ -243,14 +243,19 @@ function chooseImages() {
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
     success: async res => {
+      let failed = 0
       uni.showLoading({ title: '处理图片', mask: true })
       try {
-        const metas = await importFromChooseResult(res)
-        form.images.push(...metas)
-        newImages.push(...metas)
-        await fillUrls(metas)
+        const result = await importFromChooseResult(res)
+        failed = result.failed
+        form.images.push(...result.items)
+        newImages.push(...result.items)
+        await fillUrls(result.items)
       } finally {
         uni.hideLoading()
+      }
+      if (failed) {
+        uni.showToast({ title: `${failed} 张图片导入失败`, icon: 'none' })
       }
     }
   })

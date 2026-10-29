@@ -17,21 +17,27 @@ const THUMB_QUALITY = 0.75
 
 /**
  * 导入 uni.chooseImage 的结果。
- * @returns {Promise<Array<{id:string,w:number,h:number,size:number,path:string}>>}
+ * 单张失败不会中断其他图片，失败数量返回给调用方用于提示用户。
+ * @returns {Promise<{items: Array<{id:string,w:number,h:number,size:number,path:string}>, failed: number}>}
  */
 export async function importFromChooseResult(res) {
   const paths = (res && res.tempFilePaths) || []
   const files = (res && res.tempFiles) || []
-  const out = []
+  const items = []
+  let failed = 0
+
   for (let i = 0; i < paths.length; i++) {
     try {
       const meta = await importOne(paths[i], files[i])
-      if (meta) out.push(meta)
+      if (meta) items.push(meta)
+      else failed++
     } catch (e) {
+      failed++
       console.error('[imageStore] 导入图片失败', e)
     }
   }
-  return out
+
+  return { items, failed }
 }
 
 /* ------------------------------------------------------------------ */
