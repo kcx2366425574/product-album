@@ -141,10 +141,12 @@ export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = 
     if (!p || !p.expiryDate) continue
     const rd = effectiveReminderDays(p, defaultRd)
 
-    const points = [
-      { date: offsetDateStr(p.expiryDate, -rd, 'day'), type: 'advance', days: rd },
-      { date: p.expiryDate, type: 'expiry', days: 0 }
-    ]
+    const points = []
+    // 提前 0 天时 adv 与到期日是同一天，排两条会在同一时刻弹两次通知
+    if (rd > 0) {
+      points.push({ date: offsetDateStr(p.expiryDate, -rd, 'day'), type: 'advance', days: rd })
+    }
+    points.push({ date: p.expiryDate, type: 'expiry', days: 0 })
 
     for (const pt of points) {
       const at = atTimeOfDay(pt.date, notifyTime)

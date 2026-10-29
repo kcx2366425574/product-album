@@ -84,4 +84,11 @@ describe('buildSchedule', () => {
     const entries = buildSchedule([product()], { ...settings, notifyEnabled: false }, { now, days: 30 })
     expect(entries).toHaveLength(0)
   })
+
+  it('提前 0 天时只排到期当天一条，不重复', () => {
+    const entries = buildSchedule([product({ reminderDays: 0 })], settings, { now, days: 30 })
+    expect(entries).toHaveLength(1)
+    expect(entries[0].payload.type).toBe('expiry')
+    expect(entries[0].at).toBe(new Date(2026, 10, 5, 9, 0, 0).getTime())
+  })
 })
