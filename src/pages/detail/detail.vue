@@ -66,6 +66,14 @@
             <text class="info-value">{{ durationText(product) }}</text>
           </view>
           <view class="info-row">
+            <text class="info-label">购买金额</text>
+            <text class="info-value num">{{ money(product.purchaseAmount) }}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">累计花费</text>
+            <text class="info-value num">{{ money(spend) }}</text>
+          </view>
+          <view class="info-row">
             <text class="info-label">提醒提前</text>
             <text class="info-value">{{ reminderText }}</text>
           </view>
@@ -150,6 +158,7 @@ import { deleteProduct, saveProduct, state } from '@/store/app'
 import { getProduct } from '@/services/db'
 import { removeImage, resolveImageUrl } from '@/services/imageStore'
 import { reschedule } from '@/services/reminder'
+import { productSpend } from '@/services/stats'
 import {
   DURATION_UNITS,
   STATUS_TEXT,
@@ -192,6 +201,13 @@ const progress = computed(() => {
   if (!span) return 100
   return Math.max(4, Math.min(100, Math.round((days.value / span) * 100)))
 })
+
+const spend = computed(() => (product.value ? productSpend(product.value) : 0))
+
+function money(value) {
+  const n = Number(value) || 0
+  return n > 0 ? `¥${n.toFixed(2)}` : '—'
+}
 
 const reminderText = computed(() => {
   if (!product.value) return ''

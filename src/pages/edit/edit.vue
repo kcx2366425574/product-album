@@ -61,6 +61,11 @@
         </view>
 
         <view class="field">
+          <text class="field-label">购买金额（可选）</text>
+          <input v-model="form.purchaseAmount" class="input" type="digit" placeholder="0.00" />
+        </view>
+
+        <view class="field">
           <text class="field-label">时长</text>
           <view class="dur-row">
             <input v-model="form.durationValue" class="input dur-input num" type="number" />
@@ -149,6 +154,7 @@ const form = reactive({
   tagsText: '',
   note: '',
   purchaseDate: todayStr(),
+  purchaseAmount: '',
   durationValue: 90,
   durationUnit: 'day',
   reminderMode: 'default',
@@ -192,6 +198,7 @@ onLoad(async options => {
   form.tagsText = (p.tags || []).join(' ')
   form.note = p.note
   form.purchaseDate = p.purchaseDate
+  form.purchaseAmount = p.purchaseAmount ? String(p.purchaseAmount) : ''
   form.durationValue = p.durationValue
   form.durationUnit = p.durationUnit
   form.reminderMode = p.reminderDays >= 0 ? 'custom' : 'default'
@@ -295,6 +302,13 @@ async function save() {
     uni.showToast({ title: '时长必须大于 0', icon: 'none' })
     return
   }
+  const amount = Number(form.purchaseAmount)
+  if (Number.isFinite(amount) && amount < 0) {
+    uni.showToast({ title: '购买金额不能为负', icon: 'none' })
+    return
+  }
+  const purchaseAmount = Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0
+
   let reminderDays = -1
   if (form.reminderMode === 'custom') {
     reminderDays = Number(form.reminderDays)
@@ -334,6 +348,7 @@ async function save() {
     })),
     coverIndex: form.coverIndex,
     purchaseDate: form.purchaseDate,
+    purchaseAmount,
     durationValue: value,
     durationUnit: form.durationUnit,
     expiryDate,

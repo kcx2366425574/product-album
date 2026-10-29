@@ -79,6 +79,29 @@
       </view>
 
       <view class="group">
+        <text class="group-title">花费统计</text>
+        <view class="group-card">
+          <view class="row">
+            <text class="row-title">累计花费</text>
+            <text class="row-value num">{{ money(spend.total) }}</text>
+          </view>
+          <view class="row">
+            <text class="row-title">本月支出</text>
+            <text class="row-value num">{{ money(spend.month) }}</text>
+          </view>
+          <view class="row">
+            <text class="row-title">今年支出</text>
+            <text class="row-value num">{{ money(spend.year) }}</text>
+          </view>
+          <view class="row">
+            <text class="row-title">续费次数</text>
+            <text class="row-value num">{{ spend.renewalCount }} 次</text>
+          </view>
+        </view>
+        <text class="group-note">统计购买金额与续费金额，未填写的金额不计入。</text>
+      </view>
+
+      <view class="group">
         <text class="group-title">数据</text>
         <view class="group-card">
           <view class="row">
@@ -127,6 +150,14 @@ import {
 } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
 import { saveNotifyRecords, saveProducts } from '@/services/db'
+import { spendSummary } from '@/services/stats'
+
+const spend = computed(() => spendSummary(state.products, state.today))
+
+function money(value) {
+  const n = Number(value) || 0
+  return n > 0 ? `¥${n.toFixed(2)}` : '—'
+}
 
 const permissionState = ref('default')
 const isApp = ref(false)

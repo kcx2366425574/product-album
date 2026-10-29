@@ -87,6 +87,7 @@ export function normalizeProduct(raw) {
     images,
     coverIndex,
     purchaseDate,
+    purchaseAmount: Math.max(0, Number(raw.purchaseAmount) || 0),
     durationValue,
     durationUnit,
     expiryDate,

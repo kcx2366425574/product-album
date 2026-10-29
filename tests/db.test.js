@@ -95,6 +95,14 @@ describe('db 写入失败处理', () => {
     expect(image.thumbH).toBe(360)
   })
 
+  it('规范化购买金额，负数归零', () => {
+    upsertProduct(product({ purchaseAmount: '99.5' }))
+    expect(loadProducts()[0].purchaseAmount).toBe(99.5)
+
+    upsertProduct(product({ id: 'p2', purchaseAmount: -10 }))
+    expect(loadProducts().find(item => item.id === 'p2').purchaseAmount).toBe(0)
+  })
+
   it('老数据缺少缩略图字段时安全回退为空值', () => {
     upsertProduct(
       product({ images: [{ id: 'img1', w: 1600, h: 1200, size: 1000, path: '' }] })
