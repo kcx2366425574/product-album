@@ -43,6 +43,19 @@
       </view>
     </view>
 
+    <view v-if="showBackupBanner" class="container">
+      <view class="backup-banner" @tap="goSettings">
+        <view class="backup-dot" />
+        <view class="perm-main">
+          <text class="backup-title">建议备份数据</text>
+          <text class="perm-sub">
+            {{ state.settings.lastBackupAt ? '商品只存在本机，已超过 30 天没有导出备份' : '商品只存在本机，还没有导出过备份' }}
+          </text>
+        </view>
+        <text class="backup-action">去备份 ›</text>
+      </view>
+    </view>
+
     <view class="container">
       <view class="search">
         <view class="search-icon" />
@@ -106,20 +119,22 @@
       </view>
     </view>
 
-    <view v-if="list.length" class="grid container">
-      <view v-for="p in visibleList" :key="p.id" class="card-wrap">
-        <ProductCard
-          :product="p"
-          :default-reminder-days="state.settings.defaultReminderDays"
-          :today="state.today"
-          @open="goDetail"
-        />
+    <template v-if="list.length">
+      <view class="grid container">
+        <view v-for="p in visibleList" :key="p.id" class="card-wrap">
+          <ProductCard
+            :product="p"
+            :default-reminder-days="state.settings.defaultReminderDays"
+            :today="state.today"
+            @open="goDetail"
+          />
+        </view>
       </view>
-    </view>
 
-    <view v-if="hasMore" class="load-more container" @tap="loadMore">
-      <text class="load-more-text">加载更多（还有 {{ list.length - visibleCount }} 件）</text>
-    </view>
+      <view v-if="hasMore" class="load-more container" @tap="loadMore">
+        <text class="load-more-text">加载更多（还有 {{ list.length - visibleCount }} 件）</text>
+      </view>
+    </template>
 
     <EmptyState
       v-else-if="!state.products.length"
@@ -150,6 +165,7 @@ import { categories, dueItems, filteredProducts, initStore, state, stats } from 
 import { ensurePermission, getPermissionState } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
 import { SORT_OPTIONS } from '@/services/filters'
+import { isBackupDue } from '@/services/backup'
 import { themeClass } from '@/store/theme'
 
 const PAGE_SIZE = 40
@@ -182,6 +198,10 @@ const showPermissionBanner = computed(
     state.settings.notifyEnabled !== false &&
     permissionState.value !== 'granted' &&
     permissionState.value !== 'unsupported'
+)
+
+const showBackupBanner = computed(() =>
+  isBackupDue(state.products, state.settings.lastBackupAt)
 )
 
 const FILTER_LABELS = {
@@ -384,6 +404,40 @@ function goCalendar() {
 }
 
 .sub-ok {
+  color: var(--brand);
+}
+
+.backup-banner {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 24rpx;
+  margin-bottom: 20rpx;
+  border-radius: 20rpx;
+  background: var(--brand-soft);
+  border: 2rpx solid rgba(47, 107, 79, 0.16);
+}
+
+.backup-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--brand);
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.backup-title {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.backup-action {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  font-weight: 600;
   color: var(--brand);
 }
 

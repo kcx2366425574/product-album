@@ -11,8 +11,21 @@ import { todayStr } from '@/utils/date'
 
 export const BACKUP_APP = 'product-album'
 export const BACKUP_VERSION = 1
+export const BACKUP_REMIND_DAYS = 30
 
+const DAY_MS = 24 * 60 * 60 * 1000
 const SETTINGS_KEYS = ['defaultReminderDays', 'notifyTime', 'notifyEnabled', 'theme']
+
+/**
+ * 有商品且超过 intervalDays 没有备份时提醒。
+ * 从未备份也算需要提醒。
+ */
+export function isBackupDue(products, lastBackupAt, now = Date.now(), intervalDays = BACKUP_REMIND_DAYS) {
+  if (!products || !products.length) return false
+  const last = Number(lastBackupAt) || 0
+  if (last <= 0) return true
+  return now - last >= intervalDays * DAY_MS
+}
 
 export function sanitizeSettings(settings) {
   const out = {}

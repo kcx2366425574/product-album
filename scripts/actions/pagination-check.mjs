@@ -43,6 +43,9 @@ export default async function (page) {
   const errors = []
   const firstPageCards = await page.locator('.product-card').count()
   if (firstPageCards !== 40) errors.push(`首屏应渲染 40 件，实际 ${firstPageCards}`)
+  if (await page.getByText('当前筛选下没有商品', { exact: true }).isVisible()) {
+    errors.push('有商品时仍显示空状态文案')
+  }
 
   const loadMore = page.getByText(/加载更多/, { exact: false })
   if (!(await loadMore.isVisible())) errors.push('没有显示加载更多按钮')

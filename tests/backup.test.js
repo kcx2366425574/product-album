@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBackup,
   createBackup,
+  isBackupDue,
   parseBackup,
   prepareImport,
   sanitizeSettings
@@ -12,6 +13,27 @@ const validBackup = {
   schemaVersion: 1,
   products: []
 }
+
+describe('isBackupDue', () => {
+  const now = Date.UTC(2026, 9, 29)
+  const day = 24 * 60 * 60 * 1000
+
+  it('没有商品时不提醒', () => {
+    expect(isBackupDue([], 0, now)).toBe(false)
+  })
+
+  it('从未备份时提醒', () => {
+    expect(isBackupDue([{ id: 'p1' }], 0, now)).toBe(true)
+  })
+
+  it('超过 30 天未备份时提醒', () => {
+    expect(isBackupDue([{ id: 'p1' }], now - 31 * day, now)).toBe(true)
+  })
+
+  it('30 天内备份过不提醒', () => {
+    expect(isBackupDue([{ id: 'p1' }], now - 10 * day, now)).toBe(false)
+  })
+})
 
 describe('sanitizeSettings', () => {
   it('只保留允许备份的设置项', () => {
