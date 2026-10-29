@@ -103,6 +103,16 @@ describe('db 写入失败处理', () => {
     expect(loadProducts().find(item => item.id === 'p2').purchaseAmount).toBe(0)
   })
 
+  it('数据损坏时保留原始副本并返回空列表', () => {
+    storage.set('pa.products.v1', '{bad json')
+
+    expect(loadProducts()).toEqual([])
+
+    const backup = JSON.parse(storage.get('pa.products.v1.corrupt'))
+    expect(backup.raw).toBe('{bad json')
+    expect(backup.at).toBeTypeOf('number')
+  })
+
   it('老数据缺少缩略图字段时安全回退为空值', () => {
     upsertProduct(
       product({ images: [{ id: 'img1', w: 1600, h: 1200, size: 1000, path: '' }] })

@@ -23,13 +23,27 @@ export const DEFAULT_SETTINGS = {
   lastBackupAt: 0
 }
 
-function read(key, fallback) {
+function preserveCorrupt(key, raw) {
   try {
-    const raw = uni.getStorageSync(key)
+    uni.setStorageSync(
+      `${key}.corrupt`,
+      JSON.stringify({ at: Date.now(), raw: String(raw) })
+    )
+  } catch (e) {
+    console.error('[db] 备份损坏数据失败', key, e)
+  }
+}
+
+function read(key, fallback) {
+  let raw
+  try {
+    raw = uni.getStorageSync(key)
     if (raw === '' || raw === null || raw === undefined) return fallback
     return JSON.parse(raw)
   } catch (e) {
     console.error('[db] 读取失败', key, e)
+    // 解析失败时先把原始内容留一份，方便排查或手工恢复，避免直接丢失
+    if (raw !== undefined && raw !== null && raw !== '') preserveCorrupt(key, raw)
     return fallback
   }
 }
