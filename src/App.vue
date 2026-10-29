@@ -1,18 +1,25 @@
 <script setup>
 import { onLaunch, onShow } from '@dcloudio/uni-app'
-import { initStore, state } from '@/store/app'
+import { initStore, state, updateSettings } from '@/store/app'
 import { markDelivered, pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
 import { loadPromptRecord, savePromptRecord } from '@/services/db'
-import { consumeDeliveredIds, consumeLaunchPayload } from '@/services/notify'
+import {
+  consumeDeliveredIds,
+  consumeLaunchPayload,
+  ensurePermission,
+  getPermissionState
+} from '@/services/notify'
+import { shouldPromptPermission } from '@/services/permission'
 import { todayStr } from '@/utils/date'
 
 let lastScanAt = 0
 let launchPayloadHandled = false
+let permissionPrompting = false
 
 function scanAndPrompt() {
   const now = Date.now()
   // onLaunch / onShow 会连续触发，避免重复扫描
-  if (now - lastScanAt < 1500) return
+  if (now - lastScanAt < 1500) return false
   lastScanAt = now
   try {
     // 先记下原生闹钟已经弹过的提醒，再扫描，避免同一条提醒重复弹出
@@ -20,17 +27,18 @@ function scanAndPrompt() {
     const { pending } = runScan(state.products, state.settings)
     reschedule(state.products, state.settings)
     pruneNotifyRecords(state.products)
-    promptIfNeeded(pending)
+    return promptIfNeeded(pending)
   } catch (e) {
     console.error('[app] 提醒扫描失败', e)
+    return false
   }
 }
 
 function promptIfNeeded(pending) {
-  if (!pending || !pending.length) return
+  if (!pending || !pending.length) return false
   const today = todayStr()
   const record = loadPromptRecord()
-  if (record.lastPromptDate === today) return
+  if (record.lastPromptDate === today) return false
 
   const lines = pending.slice(0, 3).map(item => {
     if (item.type === 'expired') return `「${item.product.name}」已过期 ${Math.abs(item.days)} 天`
@@ -46,6 +54,43 @@ function promptIfNeeded(pending) {
     confirmText: '知道了',
     showCancel: false
   })
+  return true
+}
+
+/**
+ * App 首次启动引导开启通知权限。
+ * 只在原生端执行；如果本次已经弹过到期提醒，就等下次前台再引导，避免两个弹窗打架。
+ */
+function maybePromptPermission(duePromptShown) {
+  // #ifdef APP-PLUS
+  if (permissionPrompting || duePromptShown) return
+  if (!shouldPromptPermission(state.settings, getPermissionState())) return
+
+  permissionPrompting = true
+  setTimeout(() => {
+    uni.showModal({
+      title: '开启到期提醒',
+      content: '允许通知后，商品到期时才能在通知栏提醒你；关闭通知时只能在打开 App 时看到提示。',
+      confirmText: '去开启',
+      cancelText: '暂不',
+      success: async res => {
+        updateSettings({ permissionPrompted: true })
+        if (!res.confirm) {
+          permissionPrompting = false
+          return
+        }
+        const ok = await ensurePermission()
+        permissionPrompting = false
+        if (ok) {
+          reschedule(state.products, state.settings)
+          uni.showToast({ title: '通知已开启', icon: 'none' })
+        } else {
+          uni.showToast({ title: '未获得通知权限，可在系统设置中开启', icon: 'none' })
+        }
+      }
+    })
+  }, 600)
+  // #endif
 }
 
 function handleLaunchPayload() {
@@ -64,7 +109,8 @@ onLaunch(() => {
 
 onShow(() => {
   initStore()
-  scanAndPrompt()
+  const duePromptShown = scanAndPrompt()
+  maybePromptPermission(duePromptShown)
   handleLaunchPayload()
 })
 </script>

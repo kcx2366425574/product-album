@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = {
   defaultReminderDays: 7,
   notifyTime: '09:00',
   notifyEnabled: true,
+  permissionPrompted: false,
   theme: 'auto',
   lastBackupAt: 0
 }

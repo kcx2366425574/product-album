@@ -27,6 +27,19 @@
       </text>
     </view>
 
+    <view v-if="showPermissionBanner" class="container">
+      <view class="perm-banner" @tap="openPermission">
+        <view class="perm-dot" />
+        <view class="perm-main">
+          <text class="perm-title">通知未开启</text>
+          <text class="perm-sub">
+            {{ permissionState === 'denied' ? '系统已关闭通知，到期提醒收不到' : '开启后到期时自动提醒你' }}
+          </text>
+        </view>
+        <text class="perm-action">去开启 ›</text>
+      </view>
+    </view>
+
     <view class="container">
       <view class="search">
         <view class="search-icon" />
@@ -103,13 +116,25 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ProductCard from '@/components/ProductCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { dueItems, filteredProducts, initStore, state, stats } from '@/store/app'
+import { ensurePermission, getPermissionState } from '@/services/notify'
+import { reschedule } from '@/services/reminder'
 
 const list = computed(() => filteredProducts.value)
+const isApp = ref(false)
+const permissionState = ref('granted')
+
+const showPermissionBanner = computed(
+  () =>
+    isApp.value &&
+    state.settings.notifyEnabled !== false &&
+    permissionState.value !== 'granted' &&
+    permissionState.value !== 'unsupported'
+)
 
 const FILTER_LABELS = {
   all: '全部商品',
@@ -127,7 +152,20 @@ const todayLabel = (() => {
 
 onShow(() => {
   initStore()
+  // #ifdef APP-PLUS
+  isApp.value = true
+  permissionState.value = getPermissionState()
+  // #endif
 })
+
+async function openPermission() {
+  const ok = await ensurePermission()
+  permissionState.value = getPermissionState()
+  if (ok) {
+    reschedule(state.products, state.settings)
+    uni.showToast({ title: '通知已开启', icon: 'none' })
+  }
+}
 
 function setFilter(f) {
   state.filter = f
@@ -267,6 +305,52 @@ function goSettings() {
 
 .sub-ok {
   color: var(--brand);
+}
+
+.perm-banner {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 24rpx;
+  margin-bottom: 20rpx;
+  border-radius: 20rpx;
+  background: var(--warn-soft);
+  border: 2rpx solid rgba(185, 97, 26, 0.18);
+}
+
+.perm-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--warn);
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.perm-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.perm-title {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.perm-sub {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--ink-2);
+}
+
+.perm-action {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--warn);
 }
 
 .search {
