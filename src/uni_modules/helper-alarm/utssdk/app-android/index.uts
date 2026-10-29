@@ -70,7 +70,7 @@ function buildNotification(context : Context, title : string, content : string, 
 
   builder.setContentTitle(title)
   builder.setContentText(content)
-  builder.setSmallIcon(smallIcon(context))
+  builder.setSmallIcon(smallIcon(context).toInt())
   builder.setAutoCancel(true)
   builder.setDefaults(Notification.DEFAULT_ALL)
   builder.setPriority(Notification.PRIORITY_HIGH)
@@ -200,10 +200,10 @@ export function schedule(id : string, triggerAt : number, title : string, conten
 
   try {
     // Android 12+ 未授予精确闹钟权限时会抛 SecurityException，降级为非精确闹钟
-    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt.toLong(), pendingIntent)
   } catch (e) {
     console.log("[helper-alarm] 精确闹钟不可用，降级: " + e)
-    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt.toLong(), pendingIntent)
   }
 }
 

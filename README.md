@@ -98,7 +98,7 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/after-add.png 390
    - 打包类型：APK
 5. 打包完成后下载 APK 安装到手机
 
-> 云打包时 DCloud 会编译 `src/uni_modules/helper-alarm` 这个 UTS 插件。本机没有安装 Android SDK，所以本地 UTS 编译验证走不通，最终以云打包日志为准。
+> 云打包时 DCloud 会编译 `src/uni_modules/helper-alarm` 这个 UTS 插件。本地已用 `npx uni build -p app` 验证过 App 资源编译和 UTS→Kotlin 转换（产物 `dist/build/app/uni_modules/helper-alarm/utssdk/app-android/src/index.kt`）；本机没有 Android SDK，Kotlin 编译这一步以云打包日志为准。
 
 ## 原生通知插件说明
 
