@@ -1,5 +1,5 @@
 <template>
-  <view class="product-card" @tap="$emit('open', product)">
+  <view class="product-card" :class="{ selected }" @tap="onTap">
     <view class="cover">
       <image v-if="coverUrl" class="cover-img" :src="coverUrl" mode="aspectFill" />
       <view v-else class="cover-fallback">
@@ -9,6 +9,7 @@
 
       <view class="badge" :class="status">{{ badgeText }}</view>
       <view v-if="product.images.length > 1" class="count">{{ product.images.length }} 图</view>
+      <view v-if="selectable" class="select-dot" :class="{ on: selected }" />
     </view>
 
     <view class="body">
@@ -32,10 +33,16 @@ import { useImageUrl } from '@/composables/useImageUrl'
 const props = defineProps({
   product: { type: Object, required: true },
   defaultReminderDays: { type: Number, default: 7 },
-  today: { type: String, default: '' }
+  today: { type: String, default: '' },
+  selectable: { type: Boolean, default: false },
+  selected: { type: Boolean, default: false }
 })
 
-defineEmits(['open'])
+const emit = defineEmits(['open', 'select'])
+
+function onTap() {
+  emit(props.selectable ? 'select' : 'open', props.product)
+}
 
 const cover = computed(() => props.product.images[props.product.coverIndex] || null)
 const coverUrl = useImageUrl(cover, { thumb: true })
@@ -65,10 +72,44 @@ const progress = computed(() => {
 
 <style scoped>
 .product-card {
+  position: relative;
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+
+.product-card.selected {
+  outline: 4rpx solid var(--brand);
+  outline-offset: -4rpx;
+}
+
+.select-dot {
+  position: absolute;
+  right: 16rpx;
+  top: 16rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  border: 3rpx solid #ffffff;
+  background: rgba(29, 35, 31, 0.35);
+  z-index: 2;
+}
+
+.select-dot.on {
+  background: var(--brand);
+}
+
+.select-dot.on::after {
+  content: '';
+  position: absolute;
+  left: 14rpx;
+  top: 7rpx;
+  width: 10rpx;
+  height: 18rpx;
+  border-right: 4rpx solid #ffffff;
+  border-bottom: 4rpx solid #ffffff;
+  transform: rotate(45deg);
 }
 
 .cover {

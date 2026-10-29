@@ -141,6 +141,12 @@ export function removeProduct(id) {
   return saveProducts(loadProducts().filter(p => p.id !== id))
 }
 
+/** 批量删除，只写一次存储 */
+export function removeProducts(ids) {
+  const set = new Set((ids || []).map(String))
+  return saveProducts(loadProducts().filter(p => !set.has(p.id)))
+}
+
 export function loadSettings() {
   const s = read(KEY_SETTINGS, {})
   return { ...DEFAULT_SETTINGS, ...(s && typeof s === 'object' ? s : {}) }

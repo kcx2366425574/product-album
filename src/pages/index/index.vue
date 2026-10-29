@@ -113,6 +113,7 @@
       <text class="list-title">{{ filterLabel }}</text>
       <view class="list-side">
         <text class="list-count">{{ list.length }} 件</text>
+        <view class="manage-btn" @tap="toggleManage">{{ managing ? '取消' : '管理' }}</view>
         <picker mode="selector" :range="sortLabels" :value="sortIndex" @change="onSortChange">
           <view class="sort-btn">{{ sortLabel }}<text class="sort-caret">▾</text></view>
         </picker>
@@ -126,7 +127,10 @@
             :product="p"
             :default-reminder-days="state.settings.defaultReminderDays"
             :today="state.today"
+            :selectable="managing"
+            :selected="isSelected(p.id)"
             @open="goDetail"
+            @select="toggleSelect"
           />
         </view>
       </view>
@@ -147,10 +151,24 @@
       <view class="none-btn" @tap="resetFilter">{{ state.keyword ? '清空搜索' : '查看全部' }}</view>
     </view>
 
-    <view class="fab-wrap">
+    <view v-if="!managing" class="fab-wrap">
       <view class="fab" @tap="goCreate">
         <view class="plus-h" />
         <view class="plus-v" />
+      </view>
+    </view>
+
+    <view v-if="managing" class="batch-bar">
+      <text class="batch-info">已选 <text class="num">{{ selectedCount }}</text> 件</text>
+      <view class="batch-actions">
+        <view class="batch-btn" @tap="selectAll">{{ allSelected ? '取消全选' : '全选' }}</view>
+        <view
+          class="batch-btn danger"
+          :class="{ disabled: !selectedCount }"
+          @tap="confirmBatchDelete"
+        >
+          删除
+        </view>
       </view>
     </view>
   </view>
@@ -161,16 +179,32 @@ import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ProductCard from '@/components/ProductCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import { categories, dueItems, filteredProducts, initStore, state, stats } from '@/store/app'
+import {
+  categories,
+  deleteProducts,
+  dueItems,
+  filteredProducts,
+  initStore,
+  state,
+  stats
+} from '@/store/app'
 import { ensurePermission, getPermissionState } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
+import { removeImage } from '@/services/imageStore'
 import { SORT_OPTIONS } from '@/services/filters'
 import { isBackupDue } from '@/services/backup'
 import { themeClass } from '@/store/theme'
 
 const PAGE_SIZE = 40
 
+const managing = ref(false)
+const selectedIds = ref(new Set())
+const selectedCount = computed(() => selectedIds.value.size)
+
 const list = computed(() => filteredProducts.value)
+const allSelected = computed(
+  () => list.value.length > 0 && selectedIds.value.size >= list.value.length
+)
 const visibleCount = ref(PAGE_SIZE)
 const visibleList = computed(() => list.value.slice(0, visibleCount.value))
 const hasMore = computed(() => list.value.length > visibleCount.value)
@@ -180,6 +214,11 @@ watch(
   () => [state.keyword, state.filter, state.category, state.sort],
   () => {
     visibleCount.value = PAGE_SIZE
+    // 筛选条件变化后选中项可能不可见，直接退出管理模式
+    if (managing.value) {
+      managing.value = false
+      selectedIds.value = new Set()
+    }
   }
 )
 
@@ -243,6 +282,57 @@ function setCategory(name) {
   state.category = state.category === name ? '' : name
 }
 
+function isSelected(id) {
+  return selectedIds.value.has(id)
+}
+
+function toggleSelect(product) {
+  const next = new Set(selectedIds.value)
+  if (next.has(product.id)) next.delete(product.id)
+  else next.add(product.id)
+  selectedIds.value = next
+}
+
+function toggleManage() {
+  managing.value = !managing.value
+  selectedIds.value = new Set()
+}
+
+function selectAll() {
+  selectedIds.value = allSelected.value ? new Set() : new Set(list.value.map(item => item.id))
+}
+
+function confirmBatchDelete() {
+  if (!selectedIds.value.size) return
+
+  const ids = [...selectedIds.value]
+  const products = state.products.filter(item => selectedIds.value.has(item.id))
+
+  uni.showModal({
+    title: '批量删除',
+    content: `确定删除选中的 ${ids.length} 件商品吗？图片和续费记录会一起删除，无法恢复。`,
+    confirmText: '删除',
+    confirmColor: '#B03A31',
+    success: async res => {
+      if (!res.confirm) return
+
+      // 先写数据，成功后再清理图片
+      if (!deleteProducts(ids)) {
+        uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+        return
+      }
+
+      managing.value = false
+      selectedIds.value = new Set()
+      for (const product of products) {
+        await Promise.all((product.images || []).map(image => removeImage(image)))
+      }
+      reschedule(state.products, state.settings)
+      uni.showToast({ title: `已删除 ${products.length} 件`, icon: 'none' })
+    }
+  })
+}
+
 function onSortChange(event) {
   const item = SORT_OPTIONS[Number(event.detail.value)]
   if (item) state.sort = item.value
@@ -261,6 +351,8 @@ function resetFilter() {
   state.filter = 'all'
   state.category = ''
   state.sort = 'expiry'
+  managing.value = false
+  selectedIds.value = new Set()
 }
 
 function goDetail(product) {
@@ -641,6 +733,15 @@ function goCalendar() {
   align-items: center;
 }
 
+.manage-btn {
+  margin-left: 16rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 12rpx;
+  background: var(--surface-2);
+  font-size: 24rpx;
+  color: var(--ink-2);
+}
+
 .sort-btn {
   display: flex;
   align-items: center;
@@ -724,6 +825,52 @@ function goCalendar() {
   border: 2rpx solid var(--line);
   font-size: 26rpx;
   color: var(--ink-2);
+}
+
+.batch-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 750rpx;
+  max-width: 100%;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 2rpx solid var(--line);
+  box-shadow: 0 -8rpx 30rpx rgba(29, 35, 31, 0.08);
+}
+
+.batch-info {
+  font-size: 26rpx;
+  color: var(--ink-2);
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+}
+
+.batch-btn {
+  margin-left: 16rpx;
+  padding: 16rpx 32rpx;
+  border-radius: 999rpx;
+  background: var(--surface-2);
+  font-size: 26rpx;
+  color: var(--ink);
+}
+
+.batch-btn.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.batch-btn.disabled {
+  opacity: 0.4;
 }
 
 .fab-wrap {

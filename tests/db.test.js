@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadProducts, removeProduct, saveProducts, upsertProduct } from '@/services/db'
+import {
+  loadProducts,
+  removeProduct,
+  removeProducts,
+  saveProducts,
+  upsertProduct
+} from '@/services/db'
 
 const storage = new Map()
 let failWrites = false
@@ -60,6 +66,20 @@ describe('db 写入失败处理', () => {
     failWrites = false
     expect(removeProduct('p1')).toBe(true)
     expect(loadProducts()).toHaveLength(0)
+  })
+
+  it('批量删除只写一次，失败时保留全部数据', () => {
+    upsertProduct(product({ id: 'p1' }))
+    upsertProduct(product({ id: 'p2' }))
+    upsertProduct(product({ id: 'p3' }))
+
+    failWrites = true
+    expect(removeProducts(['p1', 'p2'])).toBe(false)
+    expect(loadProducts()).toHaveLength(3)
+
+    failWrites = false
+    expect(removeProducts(['p1', 'p2'])).toBe(true)
+    expect(loadProducts().map(item => item.id)).toEqual(['p3'])
   })
 
   it('saveProducts 直接返回写入结果', () => {

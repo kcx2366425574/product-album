@@ -50,6 +50,12 @@ export function deleteProduct(id) {
   return ok
 }
 
+export function deleteProducts(ids) {
+  const ok = db.removeProducts(ids)
+  if (ok) reloadProducts()
+  return ok
+}
+
 export function updateSettings(patch) {
   state.settings = db.saveSettings({ ...state.settings, ...patch })
   return state.settings
