@@ -123,6 +123,14 @@
             <text class="row-title">商品数量</text>
             <text class="row-value num">{{ state.products.length }} 件</text>
           </view>
+          <view class="row">
+            <text class="row-title">图片数量</text>
+            <text class="row-value num">{{ imageInfo.count }} 张</text>
+          </view>
+          <view class="row">
+            <text class="row-title">图片占用</text>
+            <text class="row-value num">{{ formatBytes(imageInfo.bytes) }}</text>
+          </view>
           <view class="row row-action" @tap="exportBackup">
             <view class="row-main">
               <text class="row-title">导出备份</text>
@@ -146,7 +154,7 @@
             <text class="row-arrow">›</text>
           </view>
         </view>
-        <text class="group-note">数据只保存在本机，卸载 App 会一起清除，建议定期导出备份。</text>
+        <text class="group-note">数据只保存在本机，卸载 App 会一起清除，建议定期导出备份。图片占用按原图大小估算。</text>
       </view>
 
       <view class="group">
@@ -184,6 +192,7 @@ import {
 import { reschedule } from '@/services/reminder'
 import { saveNotifyRecords, saveProducts, saveSettings } from '@/services/db'
 import { spendSummary } from '@/services/stats'
+import { formatBytes, imageStats } from '@/services/storage'
 import {
   createBackup,
   downloadBackupFile,
@@ -196,6 +205,7 @@ import { themeClass } from '@/store/theme'
 import { APP_VERSION } from '@/utils/appInfo'
 
 const spend = computed(() => spendSummary(state.products, state.today))
+const imageInfo = computed(() => imageStats(state.products))
 const lastBackupText = computed(() =>
   state.settings.lastBackupAt ? formatDateTime(state.settings.lastBackupAt) : ''
 )
