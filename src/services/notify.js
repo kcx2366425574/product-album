@@ -115,6 +115,9 @@ export function notifyNow({ title, content, payload }) {
   // #endif
   // #ifdef APP-PLUS
   try {
+    // 通知权限被拒绝时 notify() 不报错但不会展示，必须主动拦截，
+    // 否则调用方会把没送达的提醒记成"已提醒"，导致永久漏提醒。
+    if (!nativeGetPermission()) return false
     nativeNotifyNow(title, content, payload ? JSON.stringify(payload) : '')
     return true
   } catch (e) {
@@ -136,6 +139,9 @@ export function notifyNow({ title, content, payload }) {
 export function scheduleAll(entries) {
   // #ifdef APP-PLUS
   try {
+    // 没有通知权限时排程没有意义，也不应该向调用方报告成功。
+    // 用户授权后设置页会重新调用本函数。
+    if (!nativeGetPermission()) return false
     const prev = loadScheduledIds()
     for (const id of prev) nativeCancel(id)
 
