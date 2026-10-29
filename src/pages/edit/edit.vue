@@ -339,7 +339,11 @@ async function save() {
     updatedAt: Date.now()
   }
 
-  saveProduct(payload)
+  const savedProduct = saveProduct(payload)
+  if (!savedProduct) {
+    uni.showToast({ title: '保存失败，请检查存储空间', icon: 'none' })
+    return
+  }
   saved.value = true
 
   for (const m of removedImages) await removeImage(m)

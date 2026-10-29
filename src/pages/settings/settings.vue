@@ -208,19 +208,24 @@ function clearAll() {
     confirmColor: '#B03A31',
     success: async res => {
       if (!res.confirm) return
+      const products = state.products.slice()
       uni.showLoading({ title: '清理中', mask: true })
       try {
-        for (const p of state.products) {
-          await Promise.all((p.images || []).map(m => removeImage(m)))
+        // 先清数据，成功后再删图片，避免写入失败时图片已丢
+        if (!saveProducts([])) {
+          uni.showToast({ title: '清空失败，请重试', icon: 'none' })
+          return
         }
-        saveProducts([])
         saveNotifyRecords({})
         reloadProducts()
         cancelAll()
+        for (const p of products) {
+          await Promise.all((p.images || []).map(m => removeImage(m)))
+        }
+        uni.showToast({ title: '已清空', icon: 'success' })
       } finally {
         uni.hideLoading()
       }
-      uni.showToast({ title: '已清空', icon: 'success' })
     }
   })
 }

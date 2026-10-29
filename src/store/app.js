@@ -37,13 +37,14 @@ export function reloadProducts() {
 
 export function saveProduct(product) {
   const saved = db.upsertProduct(product)
-  reloadProducts()
+  if (saved) reloadProducts()
   return saved
 }
 
 export function deleteProduct(id) {
-  db.removeProduct(id)
-  reloadProducts()
+  const ok = db.removeProduct(id)
+  if (ok) reloadProducts()
+  return ok
 }
 
 export function updateSettings(patch) {

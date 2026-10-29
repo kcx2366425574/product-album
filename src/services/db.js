@@ -113,12 +113,12 @@ export function upsertProduct(product) {
   const idx = list.findIndex(p => p.id === normalized.id)
   if (idx >= 0) list[idx] = normalized
   else list.push(normalized)
-  saveProducts(list)
-  return normalized
+  // 写入失败（例如存储已满）时返回 null，让调用方提示用户，避免误以为保存成功
+  return saveProducts(list) ? normalized : null
 }
 
 export function removeProduct(id) {
-  saveProducts(loadProducts().filter(p => p.id !== id))
+  return saveProducts(loadProducts().filter(p => p.id !== id))
 }
 
 export function loadSettings() {

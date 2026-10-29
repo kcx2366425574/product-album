@@ -259,7 +259,10 @@ function doRenew() {
     amount: Number(renew.amount) || 0,
     note: renew.note
   })
-  saveProduct(next)
+  if (!saveProduct(next)) {
+    uni.showToast({ title: '续费保存失败，请重试', icon: 'none' })
+    return
+  }
   reschedule(state.products, state.settings)
   showRenew.value = false
   refresh()
@@ -274,9 +277,14 @@ function confirmDelete() {
     confirmColor: '#B03A31',
     success: async res => {
       if (!res.confirm) return
+      // 先删数据，成功后再清图片；否则存储写入失败时会丢掉图片但商品还在
+      const images = product.value.images.slice()
+      if (!deleteProduct(product.value.id)) {
+        uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+        return
+      }
       uni.showLoading({ title: '删除中' })
-      await Promise.all(product.value.images.map(m => removeImage(m)))
-      deleteProduct(product.value.id)
+      await Promise.all(images.map(m => removeImage(m)))
       reschedule(state.products, state.settings)
       uni.hideLoading()
       uni.navigateBack({
