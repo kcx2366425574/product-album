@@ -15,6 +15,8 @@ import {
   notifyNow as nativeNotifyNow,
   schedule as nativeSchedule,
   cancel as nativeCancel,
+  canScheduleExactAlarms as nativeCanScheduleExactAlarms,
+  openExactAlarmSettings as nativeOpenExactAlarmSettings,
   consumeDeliveredIds as nativeConsumeDeliveredIds,
   consumeLaunchPayload as nativeConsumeLaunchPayload
 } from '@/uni_modules/helper-alarm'
@@ -171,6 +173,35 @@ export function cancelAll() {
     saveScheduledIds([])
   } catch (e) {
     console.warn('[notify] 取消排程失败', e)
+  }
+  // #endif
+}
+
+/**
+ * Android 12+ 是否已授予精确闹钟权限。
+ * 未授权时会降级为非精确闹钟，提醒可能延迟几分钟。
+ * @returns {boolean}
+ */
+export function canScheduleExactAlarms() {
+  // #ifdef APP-PLUS
+  try {
+    return !!nativeCanScheduleExactAlarms()
+  } catch (e) {
+    return true
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  return true
+  // #endif
+}
+
+/** 打开系统的「闹钟和提醒」授权页 */
+export function openExactAlarmSettings() {
+  // #ifdef APP-PLUS
+  try {
+    nativeOpenExactAlarmSettings()
+  } catch (e) {
+    console.warn('[notify] 打开精确闹钟设置失败', e)
   }
   // #endif
 }

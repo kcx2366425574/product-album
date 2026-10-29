@@ -32,6 +32,7 @@ const CHANNEL_NAME : string = "到期提醒"
 const CHANNEL_DESC : string = "商品使用期限到期提醒"
 const EXTRA_PAYLOAD : string = "pa_payload"
 const ACTION_FIRE : string = "uts.sdk.modules.helperAlarm.FIRE"
+const ACTION_REQUEST_EXACT_ALARM : string = "android.settings.REQUEST_SCHEDULE_EXACT_ALARM"
 const PENDING_FLAGS : number = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
 const PREFS_NAME : string = "pa_alarm"
 const DELIVERED_KEY : string = "delivered_ids"
@@ -277,6 +278,34 @@ export function isPermissionGranted() : boolean {
   const context = UTSAndroid.getAppContext()
   if (context == null) return false
   return notificationsEnabled(context)
+}
+
+/** Android 12+ 精确闹钟是否已授权；低版本恒为 true */
+export function canScheduleExactAlarms() : boolean {
+  if (Build.VERSION.SDK_INT < 31) return true
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return true
+  try {
+    const alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    return alarmManager.canScheduleExactAlarms()
+  } catch (e) {
+    return true
+  }
+}
+
+/** 跳转系统的「闹钟和提醒」授权页 */
+export function openExactAlarmSettings() : void {
+  if (Build.VERSION.SDK_INT < 31) return
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return
+  try {
+    const intent = new Intent(ACTION_REQUEST_EXACT_ALARM)
+    intent.setData(Uri.parse("package:" + context.getPackageName()))
+    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+  } catch (e) {
+    console.log("[helper-alarm] 打开精确闹钟设置失败: " + e)
+  }
 }
 
 export function requestPermission(callback : PermissionCallback) : void {

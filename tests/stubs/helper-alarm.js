@@ -16,6 +16,12 @@ export function schedule() {}
 
 export function cancel() {}
 
+export function canScheduleExactAlarms() {
+  return true
+}
+
+export function openExactAlarmSettings() {}
+
 export function consumeDeliveredIds() {
   return ''
 }

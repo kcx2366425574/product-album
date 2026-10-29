@@ -66,6 +66,15 @@
               {{ nativeReady ? '已启用' : '未启用' }}
             </view>
           </view>
+          <view v-if="isApp && nativeReady" class="row row-action" @tap="onExactAlarmTap">
+            <view class="row-main">
+              <text class="row-title">精确提醒</text>
+              <text class="row-sub">{{ exactAlarmReady ? '已授权，提醒时间准确' : '未授权，系统可能延迟几分钟' }}</text>
+            </view>
+            <view class="perm-pill" :class="exactAlarmReady ? 'granted' : 'denied'">
+              {{ exactAlarmReady ? '已授权' : '去授权' }}
+            </view>
+          </view>
         </view>
       </view>
 
@@ -108,13 +117,21 @@ import { onShow } from '@dcloudio/uni-app'
 import NavBar from '@/components/NavBar.vue'
 import { reloadProducts, state, updateSettings } from '@/store/app'
 import { removeImage } from '@/services/imageStore'
-import { cancelAll, ensurePermission, getPermissionState, hasNativeScheduler } from '@/services/notify'
+import {
+  cancelAll,
+  canScheduleExactAlarms,
+  ensurePermission,
+  getPermissionState,
+  hasNativeScheduler,
+  openExactAlarmSettings
+} from '@/services/notify'
 import { reschedule } from '@/services/reminder'
 import { saveNotifyRecords, saveProducts } from '@/services/db'
 
 const permissionState = ref('default')
 const isApp = ref(false)
 const nativeReady = ref(false)
+const exactAlarmReady = ref(true)
 
 const PERMISSION_TEXT = {
   granted: '已授权',
@@ -137,9 +154,15 @@ onShow(() => {
   // #ifdef APP-PLUS
   isApp.value = true
   nativeReady.value = hasNativeScheduler()
+  exactAlarmReady.value = canScheduleExactAlarms()
   // #endif
   permissionState.value = getPermissionState()
 })
+
+function onExactAlarmTap() {
+  if (exactAlarmReady.value) return
+  openExactAlarmSettings()
+}
 
 function persist(patch) {
   updateSettings(patch)
