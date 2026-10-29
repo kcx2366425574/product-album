@@ -179,18 +179,29 @@ export function reschedule(products, settings) {
   return { count: entries.length, native: ok }
 }
 
-/** 清理已不存在商品的通知记录，避免无限增长 */
+/**
+ * 清理失效的通知记录：
+ * 1. 商品已删除
+ * 2. 商品已续费，key 里的旧到期日与当前 expiryDate 不一致
+ * 避免去重表随续费次数无限增长。
+ */
 export function pruneNotifyRecords(products) {
   const records = loadNotifyRecords()
-  const ids = new Set((products || []).map(p => p.id))
+  const currentExpiry = new Map()
+  for (const product of products || []) {
+    if (product && product.id) currentExpiry.set(product.id, String(product.expiryDate || ''))
+  }
+
   let changed = false
   for (const key of Object.keys(records)) {
-    const id = key.split('|')[0]
-    if (!ids.has(id)) {
+    const [id, expiry] = key.split('|')
+    const expected = currentExpiry.get(id)
+    if (expected === undefined || expiry !== expected) {
       delete records[key]
       changed = true
     }
   }
+
   if (changed) saveNotifyRecords(records)
   return changed
 }

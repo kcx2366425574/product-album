@@ -5,9 +5,9 @@ vi.mock('@/services/notify', () => ({
   scheduleAll: vi.fn(() => false)
 }))
 
-import { loadNotifyRecords } from '@/services/db'
+import { loadNotifyRecords, saveNotifyRecords } from '@/services/db'
 import { notifyNow } from '@/services/notify'
-import { markDelivered, runScan } from '@/services/reminder'
+import { markDelivered, pruneNotifyRecords, runScan } from '@/services/reminder'
 
 const settings = { defaultReminderDays: 7, notifyTime: '09:00', notifyEnabled: true }
 
@@ -74,6 +74,26 @@ describe('runScan 去重记录', () => {
     expect(notifyNow).not.toHaveBeenCalled()
     expect(result.sent).toHaveLength(0)
     expect(loadNotifyRecords()).toEqual({})
+  })
+})
+
+describe('pruneNotifyRecords', () => {
+  it('清理已删除商品和续费后旧到期日的记录', () => {
+    saveNotifyRecords({
+      'p1|2026-11-05|advance|7': 1,
+      'p1|2026-10-01|advance|7': 2,
+      'pX|2026-11-05|expiry': 3
+    })
+
+    expect(pruneNotifyRecords([{ id: 'p1', expiryDate: '2026-11-05' }])).toBe(true)
+    expect(loadNotifyRecords()).toEqual({ 'p1|2026-11-05|advance|7': 1 })
+  })
+
+  it('没有可清理记录时返回 false', () => {
+    saveNotifyRecords({ 'p1|2026-11-05|advance|7': 1 })
+
+    expect(pruneNotifyRecords([{ id: 'p1', expiryDate: '2026-11-05' }])).toBe(false)
+    expect(loadNotifyRecords()).toEqual({ 'p1|2026-11-05|advance|7': 1 })
   })
 })
 
