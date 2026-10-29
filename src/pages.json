@@ -25,6 +25,14 @@
       }
     },
     {
+      "path": "pages/calendar/calendar",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "到期日历",
+        "backgroundColor": "#F4F2EC"
+      }
+    },
+    {
       "path": "pages/settings/settings",
       "style": {
         "navigationStyle": "custom",

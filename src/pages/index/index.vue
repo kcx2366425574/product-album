@@ -9,6 +9,9 @@
           <text class="brand-name">商品图册</text>
         </view>
         <view class="nav-spacer" />
+        <view class="calendar-btn" @tap="goCalendar">
+          <text class="calendar-text">日历</text>
+        </view>
         <view class="settings-btn" @tap="goSettings">
           <view class="s-line"><view class="s-knob knob-1" /></view>
           <view class="s-line"><view class="s-knob knob-2" /></view>
@@ -192,6 +195,10 @@ function goCreate() {
 function goSettings() {
   uni.navigateTo({ url: '/pages/settings/settings' })
 }
+
+function goCalendar() {
+  uni.navigateTo({ url: '/pages/calendar/calendar' })
+}
 </script>
 
 <style scoped>
@@ -229,6 +236,19 @@ function goSettings() {
 
 .nav-spacer {
   flex: 1;
+}
+
+.calendar-btn {
+  padding: 12rpx 22rpx;
+  margin-right: 10rpx;
+  border-radius: 999rpx;
+  background: var(--surface);
+  border: 2rpx solid var(--line);
+}
+
+.calendar-text {
+  font-size: 24rpx;
+  color: var(--ink-2);
 }
 
 .settings-btn {
