@@ -186,7 +186,7 @@ function compressAppImage(src, id) {
   return new Promise(resolve => {
     const dst = `_doc/pa_${id}.jpg`
     plus.zip.compressImage(
-      { src, dst, quality: 82, width: MAX_SIDE, overwrite: true },
+      { src, dst, quality: 82, width: `${MAX_SIDE}px`, overwrite: true },
       () => resolve(dst),
       err => {
         console.warn('[imageStore] 压缩失败，改用原图', err)

@@ -139,9 +139,13 @@ export function buildSchedule(products, settings, { days = SCHEDULE_DAYS, now = 
   return entries
 }
 
-/** 全量重排原生定时器，返回排程条目数 */
+/**
+ * 全量重排原生定时器，返回排程条目数。
+ * 已经通过「打开 App 时扫描」发过的提醒不再排程，避免同一件事通知两次。
+ */
 export function reschedule(products, settings) {
-  const entries = buildSchedule(products, settings)
+  const records = loadNotifyRecords()
+  const entries = buildSchedule(products, settings).filter(e => !records[e.id])
   const ok = notify.scheduleAll(entries)
   return { count: entries.length, native: ok }
 }
