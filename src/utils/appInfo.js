@@ -1,11 +1,12 @@
 /** 应用版本号，需与 package.json、manifest.json 保持一致 */
-export const APP_VERSION = '1.3.0'
+export const APP_VERSION = '1.3.1'
 /** Android versionCode，需与 manifest.json 的 versionCode 保持一致 */
-export const APP_VERSION_CODE = 130
+export const APP_VERSION_CODE = 131
 
 /**
- * 默认更新源：仓库里的 releases/latest.json。
- * 设置页可以改成镜像地址；发布新包时运行 scripts/release.mjs 更新该文件。
+ * 默认更新源：jsDelivr 镜像的仓库 releases/latest.json。
+ * 国内网络访问 GitHub raw 不稳定，jsDelivr 更可靠；
+ * 也可以在设置页换成 raw 地址或其他镜像。
  */
 export const DEFAULT_UPDATE_FEED_URL =
-  'https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/latest.json'
+  'https://cdn.jsdelivr.net/gh/kcx2366425574/product-album@master/releases/latest.json'

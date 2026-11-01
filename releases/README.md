@@ -1,6 +1,6 @@
 # 更新包目录
 
-APK 与 `latest.json` 和代码放在同一个仓库，App 通过 GitHub raw 地址读取并下载。
+APK 与 `latest.json` 和代码放在同一个仓库，App 通过 jsDelivr 读取并下载（GitHub 的 raw 地址作为备选）。
 
 ## 目录
 
@@ -9,7 +9,7 @@ APK 与 `latest.json` 和代码放在同一个仓库，App 通过 GitHub raw 地
 ```
 releases/
 ├── latest.json                      # App 读取的更新信息
-├── product-album-1.3.0.apk          # 安装包
+├── product-album-1.3.1.apk          # 安装包
 └── README.md
 ```
 
@@ -32,11 +32,17 @@ releases/
 
    ```bash
    git add releases
-   git commit -m "release: 1.3.0"
+   git commit -m "release: 1.3.1"
    git push
    ```
 
-App 默认从下面的地址检查更新：
+App 默认从 jsDelivr 镜像检查更新：
+
+```
+https://cdn.jsdelivr.net/gh/kcx2366425574/product-album@master/releases/latest.json
+```
+
+GitHub raw 备选地址：
 
 ```
 https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/latest.json
@@ -48,9 +54,9 @@ https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/la
 
 ```json
 {
-  "versionName": "1.3.0",
-  "versionCode": 130,
-  "apk": "product-album-1.3.0.apk",
+  "versionName": "1.3.1",
+  "versionCode": 131,
+  "apk": "product-album-1.3.1.apk",
   "size": 12345678,
   "sha256": "…",
   "notes": "更新说明",
@@ -68,4 +74,5 @@ https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/la
 - GitHub 单文件建议不超过 100MB，超出请改用 Git LFS 或外部 CDN（`apk` 填完整地址即可）。
 - 覆盖安装要求新旧 APK 使用同一签名证书，否则 Android 会拒绝安装。
 - Android 8+ 需要允许「安装未知应用」，App 在安装失败时会引导跳转授权页。
-- 国内网络访问 GitHub raw 可能不稳定，可以在设置页换成 Gitee / CDN 镜像地址。
+- 默认走 jsDelivr 镜像，国内比 GitHub raw 稳定；jsDelivr 对 `@master` 有缓存，发布新版本后可访问 `https://purge.jsdelivr.net/gh/kcx2366425574/product-album@master/releases/latest.json` 刷新。
+- jsDelivr 单文件限制约 20MB，APK 超过后可改用 GitHub raw / Gitee / 自有 CDN，并在 `latest.json` 的 `apk` 填完整地址。

@@ -142,7 +142,7 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/alarm-home.png 39
 
 ## 应用内更新
 
-更新包、`latest.json` 和代码放在同一个仓库的 `releases/` 目录，App 从 GitHub raw 地址读取版本信息，发现新版本后下载 APK 并调起系统安装。
+更新包、`latest.json` 和代码放在同一个仓库的 `releases/` 目录，App 通过 jsDelivr 读取仓库里的版本信息，发现新版本后下载 APK 并调起系统安装。
 
 **发布新版本**
 
@@ -160,11 +160,17 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/alarm-home.png 39
 
    ```bash
    git add releases
-   git commit -m "release: 1.3.0"
+   git commit -m "release: 1.3.1"
    git push
    ```
 
-默认更新地址：
+默认更新地址（jsDelivr 镜像，国内比 raw 稳定）：
+
+```
+https://cdn.jsdelivr.net/gh/kcx2366425574/product-album@master/releases/latest.json
+```
+
+也可以在设置页换成 GitHub raw 或其他镜像：
 
 ```
 https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/latest.json
@@ -172,7 +178,7 @@ https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/la
 
 App 启动 3 秒后静默检查一次，6 小时内不重复检查；设置页「应用更新」可以手动检查、查看当前版本、修改更新地址。下载完成后调用 `plus.runtime.install` 打开系统安装界面。
 
-注意：覆盖安装必须使用同一签名证书；Android 8+ 需要允许「安装未知应用」；GitHub raw 在国内可能不稳定，可在设置页换成 Gitee / CDN 镜像。详细说明见 `releases/README.md`。
+注意：覆盖安装必须使用同一签名证书；Android 8+ 需要允许「安装未知应用」；jsDelivr 对 `@master` 有缓存，发布后可用 `https://purge.jsdelivr.net/gh/kcx2366425574/product-album@master/releases/latest.json` 刷新。详细说明见 `releases/README.md`。
 
 ## 原生通知插件说明
 

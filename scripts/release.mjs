@@ -6,8 +6,8 @@
  *   node scripts/release.mjs <apk路径> [--notes "更新说明"]
  *   npm run release:apk -- <apk路径> --notes "更新说明"
  *
- * 更新源默认地址：
- *   https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/latest.json
+ * 更新源默认地址（jsDelivr 镜像）：
+ *   https://cdn.jsdelivr.net/gh/kcx2366425574/product-album@master/releases/latest.json
  */
 import fs from 'node:fs'
 import path from 'node:path'
