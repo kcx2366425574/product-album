@@ -54,7 +54,7 @@
 | App 定时通知 | UTS 插件 `helper-alarm`（AlarmManager + NotificationManager） |
 | 闹钟排程 | JS 预展开复杂重复规则 + 原生 AlarmManager，与商品提醒使用独立排程键 |
 | 应用更新 | 仓库内 `releases/latest.json` + `plus.runtime.install` 安装 APK |
-| 测试 | Vitest（226 个用例）+ Edge/Playwright H5 流程检查 |
+| 测试 | Vitest（227 个用例）+ Edge/Playwright H5 流程检查 |
 
 ## 目录结构
 
