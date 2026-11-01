@@ -138,13 +138,17 @@
             <text class="row-value num">{{ imageInfo.count }} 张</text>
           </view>
           <view class="row">
+            <text class="row-title">闹钟数量</text>
+            <text class="row-value num">{{ alarmState.alarms.length }} 个</text>
+          </view>
+          <view class="row">
             <text class="row-title">图片占用</text>
             <text class="row-value num">{{ formatBytes(imageInfo.bytes) }}</text>
           </view>
           <view class="row row-action" @tap="exportBackup">
             <view class="row-main">
               <text class="row-title">导出备份</text>
-              <text class="row-sub">商品、图片、续费记录和设置打包为一个 JSON 文件</text>
+              <text class="row-sub">商品、图片、续费记录、闹钟和设置打包为一个 JSON 文件</text>
             </view>
             <text class="row-arrow">›</text>
           </view>
@@ -190,6 +194,7 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import NavBar from '@/components/NavBar.vue'
 import { initStore, reloadProducts, state, updateSettings } from '@/store/app'
+import { alarmState, initAlarms } from '@/store/alarm'
 import { removeImage } from '@/services/imageStore'
 import {
   cancelAll,
@@ -200,7 +205,14 @@ import {
   openExactAlarmSettings
 } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
-import { saveNotifyRecords, saveProducts, saveSettings } from '@/services/db'
+import { cancelAlarmSchedules, rescheduleAlarms } from '@/services/alarmScheduler'
+import {
+  saveAlarmAcks,
+  saveAlarms,
+  saveNotifyRecords,
+  saveProducts,
+  saveSettings
+} from '@/services/db'
 import { spendSummary } from '@/services/stats'
 import { formatBytes, imageStats } from '@/services/storage'
 import {
@@ -265,6 +277,7 @@ const permissionHint = computed(() => {
 })
 
 onShow(() => {
+  initAlarms()
   // #ifdef APP-PLUS
   isApp.value = true
   nativeReady.value = hasNativeScheduler()
@@ -331,14 +344,14 @@ async function requestPermission() {
 }
 
 async function exportBackup() {
-  if (!state.products.length) {
-    uni.showToast({ title: '还没有商品可备份', icon: 'none' })
+  if (!state.products.length && !alarmState.alarms.length) {
+    uni.showToast({ title: '还没有数据可备份', icon: 'none' })
     return
   }
 
   uni.showLoading({ title: '正在打包', mask: true })
   try {
-    const backup = await createBackup(state.products, state.settings)
+    const backup = await createBackup(state.products, state.settings, undefined, alarmState.alarms)
     await downloadBackupFile(backup)
     persist({ lastBackupAt: Date.now() })
     uni.hideLoading()
@@ -353,7 +366,7 @@ async function exportBackup() {
 function doImportBackup() {
   uni.showModal({
     title: '从备份导入',
-    content: '导入会覆盖当前全部商品、图片和设置，确定继续吗？',
+    content: '导入会覆盖当前全部商品、图片、闹钟和设置，确定继续吗？',
     confirmText: '导入',
     confirmColor: '#B03A31',
     success: async res => {
@@ -378,9 +391,13 @@ function doImportBackup() {
         }
         committed = true
         saveSettings(result.settings)
+        saveAlarms(result.alarms)
         saveNotifyRecords({})
+        saveAlarmAcks({})
         initStore()
+        initAlarms()
         reschedule(state.products, state.settings)
+        rescheduleAlarms(alarmState.alarms)
 
         for (const product of oldProducts) {
           await Promise.all((product.images || []).map(image => removeImage(image)))
@@ -407,13 +424,13 @@ function doImportBackup() {
 }
 
 function clearAll() {
-  if (!state.products.length) {
+  if (!state.products.length && !alarmState.alarms.length) {
     uni.showToast({ title: '没有数据可清空', icon: 'none' })
     return
   }
   uni.showModal({
     title: '清空所有数据',
-    content: '会删除全部商品、图片和续费记录，无法恢复。确定继续吗？',
+    content: '会删除全部商品、图片、续费记录和闹钟，无法恢复。确定继续吗？',
     confirmText: '清空',
     confirmColor: '#B03A31',
     success: async res => {
@@ -428,8 +445,12 @@ function clearAll() {
           return
         }
         saveNotifyRecords({})
+        saveAlarms([])
+        saveAlarmAcks({})
         reloadProducts()
+        initAlarms()
         cancelAll()
+        cancelAlarmSchedules()
         for (const p of products) {
           await Promise.all((p.images || []).map(m => removeImage(m)))
         }

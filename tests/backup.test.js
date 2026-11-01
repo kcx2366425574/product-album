@@ -125,6 +125,74 @@ describe('parseBackup', () => {
       '备份文件缺少商品列表'
     )
   })
+
+  it('拒绝闹钟列表格式不正确的文件', () => {
+    expect(() =>
+      parseBackup(JSON.stringify({ ...validBackup, alarms: 'oops' }))
+    ).toThrow('备份文件闹钟列表格式不正确')
+  })
+
+  it('兼容没有闹钟字段的旧备份', () => {
+    expect(parseBackup(JSON.stringify(validBackup)).alarms).toBeUndefined()
+  })
+})
+
+describe('闹钟备份', () => {
+  const alarm = {
+    id: 'a1',
+    title: ' 晨跑 ',
+    time: '07:00',
+    enabled: true,
+    rule: { type: 'monthly', monthlyMode: 'weekday', nth: -1, weekday: 6 }
+  }
+
+  it('buildBackup 携带规范化后的闹钟', () => {
+    const backup = buildBackup([], {}, {}, [alarm])
+    expect(backup.schemaVersion).toBe(2)
+    expect(backup.alarms).toHaveLength(1)
+    expect(backup.alarms[0].title).toBe('晨跑')
+    expect(backup.alarms[0].rule).toMatchObject({ nth: -1, weekday: 6 })
+  })
+
+  it('createBackup 把闹钟一起打包', async () => {
+    const backup = await createBackup([], {}, async () => '', [alarm])
+    expect(backup.alarms[0].id).toBe('a1')
+  })
+
+  it('prepareImport 恢复闹钟，缺失 id 时自动生成', async () => {
+    const result = await prepareImport(
+      {
+        products: [],
+        settings: {},
+        alarms: [alarm, { title: '喝水', time: '10:00', rule: { type: 'daily' } }, null]
+      },
+      { createImage: async () => null }
+    )
+
+    expect(result.alarms).toHaveLength(2)
+    expect(result.alarms[0].id).toBe('a1')
+    expect(result.alarms[1].id).toMatch(/^a_/)
+    expect(result.alarms[1].title).toBe('喝水')
+  })
+
+  it('重复闹钟 id 以最后一条为准', async () => {
+    const result = await prepareImport({
+      products: [],
+      settings: {},
+      alarms: [
+        { ...alarm, title: '第一条' },
+        { ...alarm, title: '最后一条' }
+      ]
+    })
+
+    expect(result.alarms).toHaveLength(1)
+    expect(result.alarms[0].title).toBe('最后一条')
+  })
+
+  it('旧备份没有闹钟字段时返回空数组', async () => {
+    const result = await prepareImport({ products: [], settings: {} })
+    expect(result.alarms).toEqual([])
+  })
 })
 
 describe('prepareImport', () => {

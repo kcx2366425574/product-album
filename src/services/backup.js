@@ -5,12 +5,14 @@
  * 图片 base64 会让文件偏大，但换来"一个文件就能换手机"的简单性。
  */
 import { normalizeProduct } from './db'
+import { normalizeAlarm } from './alarmRule'
 import { imageToDataUrl, importFromDataUrl } from './imageStore'
 import { makeId } from '@/utils/id'
 import { todayStr } from '@/utils/date'
 
 export const BACKUP_APP = 'product-album'
-export const BACKUP_VERSION = 1
+// v2 起包含闹钟；解析时仍兼容 v1 的旧备份
+export const BACKUP_VERSION = 2
 export const BACKUP_REMIND_DAYS = 30
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -42,12 +44,13 @@ export function sanitizeSettings(settings) {
 }
 
 /**
- * 纯函数：把商品、设置和图片数据组装成备份对象。
+ * 纯函数：把商品、设置、闹钟和图片数据组装成备份对象。
  * @param {Array} products
  * @param {object} settings
  * @param {Record<string,string>} imageData imageId → data URL
+ * @param {Array} alarms
  */
-export function buildBackup(products, settings, imageData = {}) {
+export function buildBackup(products, settings, imageData = {}, alarms = []) {
   return {
     app: BACKUP_APP,
     schemaVersion: BACKUP_VERSION,
@@ -62,15 +65,28 @@ export function buildBackup(products, settings, imageData = {}) {
         size: image.size || 0,
         data: imageData[image.id] || ''
       }))
-    }))
+    })),
+    alarms: (alarms || [])
+      .map(alarm => normalizeAlarm(alarm))
+      .filter(Boolean)
+      .map(alarm => ({
+        ...alarm,
+        rule: { ...alarm.rule }
+      }))
   }
 }
 
 /**
  * 读取所有图片并生成备份对象。
  * @param {Function} readImage 可注入，便于测试
+ * @param {Array} alarms
  */
-export async function createBackup(products, settings, readImage = imageToDataUrl) {
+export async function createBackup(
+  products,
+  settings,
+  readImage = imageToDataUrl,
+  alarms = []
+) {
   const imageData = {}
 
   for (const product of products || []) {
@@ -84,7 +100,7 @@ export async function createBackup(products, settings, readImage = imageToDataUr
     }
   }
 
-  return buildBackup(products, settings, imageData)
+  return buildBackup(products, settings, imageData, alarms)
 }
 
 /** 校验备份文本，返回解析后的对象；格式不对时抛出可读错误 */
@@ -108,6 +124,9 @@ export function parseBackup(text) {
   }
   if (data.settings !== undefined && (data.settings === null || typeof data.settings !== 'object')) {
     throw new Error('备份文件设置格式不正确')
+  }
+  if (data.alarms !== undefined && !Array.isArray(data.alarms)) {
+    throw new Error('备份文件闹钟列表格式不正确')
   }
 
   return data
@@ -164,9 +183,19 @@ export async function prepareImport(backup, { createImage = importFromDataUrl, o
   const byId = new Map()
   for (const product of products) byId.set(product.id, product)
 
+  const alarms = (Array.isArray(backup.alarms) ? backup.alarms : [])
+    .filter(raw => raw && typeof raw === 'object')
+    .map(raw => normalizeAlarm({ ...raw, id: raw.id || makeId('a') }))
+    .filter(Boolean)
+
+  // 同一份备份里重复的闹钟 id 以最后一条为准
+  const alarmById = new Map()
+  for (const alarm of alarms) alarmById.set(alarm.id, alarm)
+
   return {
     products: [...byId.values()],
     settings: sanitizeSettings(backup.settings),
+    alarms: [...alarmById.values()],
     createdImages,
     stats: { importedImages, failedImages, totalImages }
   }
