@@ -79,6 +79,21 @@ describe('findDueAlarmForPrompt', () => {
   })
 })
 
+describe('findDueAlarmForPrompt 稍后提醒', () => {
+  it('窗口内的稍后提醒会触发提示，确认后不再重复', () => {
+    const now = at(2026, 10, 29, 9)
+    const a = alarm()
+    saveAlarms([a])
+
+    const next = snoozeAlarm(a, 5, now)
+    const hit = findDueAlarmForPrompt([a], next, 30 * 60 * 1000, {})
+    expect(hit.entryId).toBe(`alarm-snooze:a1:${next}`)
+
+    const acks = { [hit.entryId]: 1, [`alarm:a1:${at(2026, 10, 29, 9)}`]: 1 }
+    expect(findDueAlarmForPrompt([a], next, 30 * 60 * 1000, acks)).toBeNull()
+  })
+})
+
 describe('rescheduleAlarms', () => {
   it('按规则展开未来时间点', () => {
     const result = rescheduleAlarms([alarm({ rule: { type: 'daily' } })], {

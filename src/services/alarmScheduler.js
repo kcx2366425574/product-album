@@ -9,7 +9,8 @@ import {
   alarmEntryId,
   buildAlarmEntry,
   buildAlarmEntries,
-  lastOccurrenceInRange
+  lastOccurrenceInRange,
+  snoozeEntryId
 } from './alarmRule'
 import {
   loadAlarmAcks,
@@ -34,16 +35,20 @@ const ACK_KEEP_MS = 7 * DAY_MS
 export function rescheduleAlarms(alarms, { now = Date.now() } = {}) {
   const list = Array.isArray(alarms) ? alarms : loadAlarms()
 
-  // 丢掉已经过期的稍后提醒
+  // 丢掉已经过期、或所属闹钟已被删除/关闭的稍后提醒
+  const byId = new Map(list.map(alarm => [alarm.id, alarm]))
   const stored = loadAlarmSnoozes()
-  const snoozes = stored.filter(item => item.at > now)
+  const snoozes = stored.filter(item => {
+    const alarm = byId.get(item.alarmId)
+    return item.at > now && alarm && alarm.enabled
+  })
   if (snoozes.length !== stored.length) saveAlarmSnoozes(snoozes)
 
   const mainEntries = buildAlarmEntries(list, { now })
   const snoozeEntries = []
   for (const item of snoozes) {
-    const alarm = list.find(a => a.id === item.alarmId)
-    if (alarm && alarm.enabled) snoozeEntries.push(buildAlarmEntry(alarm, item.at, { snooze: true }))
+    const alarm = byId.get(item.alarmId)
+    if (alarm) snoozeEntries.push(buildAlarmEntry(alarm, item.at, { snooze: true }))
   }
 
   // 两套 key 分别取消上一次的排程，互不影响商品到期提醒
@@ -109,15 +114,27 @@ export function findDueAlarmForPrompt(
   windowMs = 30 * 60 * 1000,
   acks = loadAlarmAcks()
 ) {
+  const list = alarms || []
   let best = null
 
-  for (const alarm of alarms || []) {
+  for (const alarm of list) {
     if (!alarm || !alarm.enabled) continue
     const at = lastOccurrenceInRange(alarm, now - windowMs, now)
     if (at == null) continue
     const entryId = alarmEntryId(alarm.id, at)
     if (acks[entryId]) continue
     if (!best || at > best.at) best = { alarm, at, entryId }
+  }
+
+  // 「稍后提醒」也是一次真实的响铃；通知权限被拒时靠这里补弹窗
+  const snoozes = loadAlarmSnoozes()
+  for (const item of snoozes) {
+    if (item.at > now || item.at < now - windowMs) continue
+    const alarm = list.find(a => a.id === item.alarmId)
+    if (!alarm || !alarm.enabled) continue
+    const entryId = snoozeEntryId(alarm.id, item.at)
+    if (acks[entryId]) continue
+    if (!best || item.at > best.at) best = { alarm, at: item.at, entryId }
   }
 
   return best
