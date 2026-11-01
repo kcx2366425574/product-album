@@ -1,0 +1,9 @@
+{
+  "versionName": "1.3.0",
+  "versionCode": 130,
+  "apk": "product-album-1.3.0.apk",
+  "size": 0,
+  "sha256": "",
+  "notes": "示例文件：正式发布时由 scripts/release.mjs 生成 latest.json",
+  "publishedAt": 0
+}
