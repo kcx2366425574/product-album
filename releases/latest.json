@@ -1,0 +1,9 @@
+{
+  "versionName": "1.3.0",
+  "versionCode": 130,
+  "apk": "product-album-1.3.0.apk",
+  "size": 14965199,
+  "sha256": "de1143fb53650248ae6f58d2faf4a81fca8ba510eff6030066404a6f2df7b584",
+  "notes": "新增应用内检查与下载更新；支持独立闹钟模块与每月最后一个周六等复杂重复规则",
+  "publishedAt": 1793550331048
+}
