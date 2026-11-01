@@ -2,12 +2,7 @@
   <view class="page" :class="themeClass">
     <view class="nav">
       <view class="nav-inner">
-        <view class="brand">
-          <view class="brand-mark">
-            <view class="brand-leaf" />
-          </view>
-          <text class="brand-name">商品图册</text>
-        </view>
+        <ModuleSwitcher current="album" />
         <view class="nav-spacer" />
         <view class="calendar-btn" @tap="goCalendar">
           <text class="calendar-text">日历</text>
@@ -179,6 +174,7 @@ import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ProductCard from '@/components/ProductCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import ModuleSwitcher from '@/components/ModuleSwitcher.vue'
 import {
   categories,
   deleteProducts,
@@ -373,38 +369,6 @@ function goCalendar() {
 </script>
 
 <style scoped>
-.brand {
-  display: flex;
-  align-items: center;
-  flex: 1;
-}
-
-.brand-mark {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 14rpx;
-  background: var(--brand);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 14rpx;
-}
-
-.brand-leaf {
-  width: 18rpx;
-  height: 18rpx;
-  border-radius: 2rpx 12rpx 2rpx 12rpx;
-  background: #ffffff;
-  transform: rotate(-12deg);
-}
-
-.brand-name {
-  font-size: 32rpx;
-  font-weight: 700;
-  letter-spacing: 1rpx;
-  color: var(--ink);
-}
-
 .nav-spacer {
   flex: 1;
 }

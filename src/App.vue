@@ -1,13 +1,22 @@
 <script setup>
 import { onLaunch, onShow } from '@dcloudio/uni-app'
 import { initStore, refreshToday, state, updateSettings } from '@/store/app'
+import { alarmState, initAlarms } from '@/store/alarm'
 import { markDelivered, pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
 import { loadPromptRecord, savePromptRecord } from '@/services/db'
+import { describeRule } from '@/services/alarmRule'
+import {
+  findDueAlarmForPrompt,
+  markAlarmDelivered,
+  rescheduleAlarms,
+  snoozeAlarm
+} from '@/services/alarmScheduler'
 import {
   consumeDeliveredIds,
   consumeLaunchPayload,
   ensurePermission,
-  getPermissionState
+  getPermissionState,
+  hasNativeScheduler
 } from '@/services/notify'
 import { shouldPromptPermission } from '@/services/permission'
 import { todayStr } from '@/utils/date'
@@ -21,9 +30,12 @@ let dayTimer = null
 function startDayTimer() {
   if (dayTimer) return
   dayTimer = setInterval(() => {
-    if (!refreshToday()) return
-    lastScanAt = 0
-    scanAndPrompt()
+    if (refreshToday()) {
+      lastScanAt = 0
+      scanAndPrompt()
+    }
+    // H5 / 无通知权限时，靠前台轮询补上闹钟弹窗
+    promptDueAlarm()
   }, 60 * 1000)
 }
 
@@ -33,8 +45,16 @@ function scanAndPrompt() {
   if (now - lastScanAt < 1500) return false
   lastScanAt = now
   try {
-    // 先记下原生闹钟已经弹过的提醒，再扫描，避免同一条提醒重复弹出
-    markDelivered(consumeDeliveredIds())
+    // 先记下原生闹钟已经弹过的提醒，再扫描，避免同一条提醒重复弹出。
+    // 商品提醒与闹钟使用不同的确认表，这里按 id 前缀分开。
+    const alarmIds = []
+    const productIds = []
+    for (const id of consumeDeliveredIds()) {
+      if (/^alarm(-snooze)?:/.test(id)) alarmIds.push(id)
+      else productIds.push(id)
+    }
+    markDelivered(productIds)
+    markAlarmDelivered(alarmIds)
     const { pending } = runScan(state.products, state.settings)
     reschedule(state.products, state.settings)
     pruneNotifyRecords(state.products)
@@ -104,11 +124,48 @@ function maybePromptPermission(duePromptShown) {
   // #endif
 }
 
+/**
+ * 闹钟响铃的前台兜底提示。
+ * App 原生定时器 + 通知权限都可用时由系统通知负责，避免同一响铃弹两次；
+ * H5 或通知权限被拒时，靠这里在打开 App / 前台轮询时补一次弹窗。
+ */
+function promptDueAlarm() {
+  if (hasNativeScheduler() && getPermissionState() === 'granted') return false
+
+  const hit = findDueAlarmForPrompt(alarmState.alarms)
+  if (!hit) return false
+
+  markAlarmDelivered([hit.entryId])
+  uni.showModal({
+    title: `${hit.alarm.title} · 闹钟响了`,
+    content: `${hit.alarm.time} · ${describeRule(hit.alarm.rule)}`,
+    confirmText: '关闭',
+    cancelText: '稍后 5 分钟',
+    success: res => {
+      if (res.confirm) return
+      const at = snoozeAlarm(hit.alarm, 5)
+      if (at) uni.showToast({ title: '5 分钟后再提醒', icon: 'none' })
+    }
+  })
+  return true
+}
+
 function handleLaunchPayload() {
   if (launchPayloadHandled) return
   const payload = consumeLaunchPayload()
-  if (!payload || !payload.productId) return
+  if (!payload) return
   launchPayloadHandled = true
+
+  if (payload.module === 'alarm' && payload.alarmId) {
+    setTimeout(() => {
+      uni.navigateTo({
+        url: `/pages/alarm/alarm?ring=${encodeURIComponent(payload.alarmId)}`
+      })
+    }, 300)
+    return
+  }
+
+  if (!payload.productId) return
   setTimeout(() => {
     // 到期/已过期的通知直接打开续费面板，提前提醒只进入详情
     const renew = payload.type === 'expiry' || payload.type === 'expired' ? '&renew=1' : ''
@@ -120,12 +177,16 @@ function handleLaunchPayload() {
 
 onLaunch(() => {
   initStore()
+  initAlarms()
   startDayTimer()
 })
 
 onShow(() => {
   initStore()
+  initAlarms()
   const duePromptShown = scanAndPrompt()
+  promptDueAlarm()
+  rescheduleAlarms(alarmState.alarms)
   maybePromptPermission(duePromptShown)
   handleLaunchPayload()
 })

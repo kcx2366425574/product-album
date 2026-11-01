@@ -9,6 +9,22 @@
       }
     },
     {
+      "path": "pages/alarm/alarm",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "闹钟",
+        "backgroundColor": "#F4F2EC"
+      }
+    },
+    {
+      "path": "pages/alarm/edit",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "编辑闹钟",
+        "backgroundColor": "#F4F2EC"
+      }
+    },
+    {
       "path": "pages/detail/detail",
       "style": {
         "navigationStyle": "custom",
