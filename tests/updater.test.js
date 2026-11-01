@@ -86,4 +86,15 @@ describe('checkForUpdate', () => {
     expect(result.status).toBe('error')
     expect(result.error).toContain('timeout')
   })
+
+  it('缓存参数不会破坏已有的查询参数和锚点', async () => {
+    let requested = ''
+    respond = options => {
+      requested = options.url
+      options.success({ statusCode: 200, data: manifest({ versionName: '0.0.1' }) })
+    }
+
+    await checkForUpdate({ feedUrl: `${FEED}?v=1#top` })
+    expect(requested).toMatch(/^https:\/\/.+\/latest\.json\?v=1&t=\d+$/)
+  })
 })

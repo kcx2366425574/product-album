@@ -42,8 +42,10 @@ export function checkForUpdate({ feedUrl = '', timeout = 12000 } = {}) {
       return
     }
 
-    const separator = feedUrl.includes('?') ? '&' : '?'
-    const url = `${feedUrl}${separator}t=${Date.now()}`
+    // 绕过 CDN/浏览器缓存；锚点要留在最后，否则查询参数会变成锚点的一部分
+    const base = String(feedUrl).split('#')[0]
+    const separator = base.includes('?') ? '&' : '?'
+    const url = `${base}${separator}t=${Date.now()}`
 
     uni.request({
       url,
