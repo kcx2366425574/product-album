@@ -171,6 +171,37 @@
         <text class="group-note">数据只保存在本机，卸载 App 会一起清除，建议定期导出备份。图片占用按原图大小估算。</text>
       </view>
 
+      <view v-if="isApp" class="group">
+        <text class="group-title">应用更新</text>
+        <view class="group-card">
+          <view class="row">
+            <text class="row-title">当前版本</text>
+            <text class="row-value num">{{ currentVersionText }}</text>
+          </view>
+          <view class="row row-action" @tap="checkUpdate">
+            <view class="row-main">
+              <text class="row-title">检查更新</text>
+              <text class="row-sub">读取仓库 releases/latest.json，发现新包后可直接下载安装</text>
+            </view>
+            <text class="row-arrow">{{ checkingUpdate ? '检查中…' : '›' }}</text>
+          </view>
+          <view class="row">
+            <view class="row-main">
+              <text class="row-title">更新地址</text>
+              <text class="row-sub">可换成镜像地址；留空恢复默认</text>
+              <input
+                v-model="feedUrlDraft"
+                class="feed-input"
+                type="text"
+                placeholder="latest.json 地址"
+                @blur="saveFeedUrl"
+              />
+            </view>
+          </view>
+        </view>
+        <text class="group-note">APK 与代码放在同一仓库的 releases 目录。发布新版本时运行 scripts/release.mjs 更新 latest.json。</text>
+      </view>
+
       <view class="group">
         <text class="group-title">关于</text>
         <view class="group-card">
@@ -222,9 +253,12 @@ import {
   pickBackupFile,
   prepareImport
 } from '@/services/backup'
+import { feedUrlOf, versionText } from '@/services/update'
+import { checkForUpdate } from '@/services/updater'
+import { showUpdateDialog } from '@/services/updateFlow'
 import { formatDateTime } from '@/utils/date'
 import { themeClass } from '@/store/theme'
-import { APP_VERSION } from '@/utils/appInfo'
+import { APP_VERSION, APP_VERSION_CODE, DEFAULT_UPDATE_FEED_URL } from '@/utils/appInfo'
 
 const spend = computed(() => spendSummary(state.products, state.today))
 const imageInfo = computed(() => imageStats(state.products))
@@ -258,6 +292,10 @@ const permissionState = ref('default')
 const isApp = ref(false)
 const nativeReady = ref(false)
 const exactAlarmReady = ref(true)
+const checkingUpdate = ref(false)
+const feedUrlDraft = ref('')
+
+const currentVersionText = computed(() => versionText(APP_VERSION, APP_VERSION_CODE))
 
 const PERMISSION_TEXT = {
   granted: '已授权',
@@ -284,11 +322,68 @@ onShow(() => {
   exactAlarmReady.value = canScheduleExactAlarms()
   // #endif
   permissionState.value = getPermissionState()
+  feedUrlDraft.value = feedUrlOf(state.settings)
 })
 
 function onExactAlarmTap() {
   if (exactAlarmReady.value) return
   openExactAlarmSettings()
+}
+
+async function checkUpdate() {
+  if (checkingUpdate.value) return
+  checkingUpdate.value = true
+  uni.showLoading({ title: '检查更新', mask: true })
+
+  try {
+    const result = await checkForUpdate({
+      feedUrl: feedUrlOf({ updateFeedUrl: feedUrlDraft.value })
+    })
+    updateSettings({ lastUpdateCheckAt: Date.now() })
+    uni.hideLoading()
+
+    if (result.status === 'update') {
+      showUpdateDialog(result.manifest)
+      return
+    }
+    if (result.status === 'latest') {
+      uni.showToast({ title: '已是最新版本', icon: 'none' })
+      return
+    }
+    if (result.status === 'unsupported') {
+      uni.showToast({ title: result.error || '当前平台不支持更新', icon: 'none' })
+      return
+    }
+    uni.showModal({
+      title: '检查更新失败',
+      content: result.error || '请检查网络和更新地址',
+      showCancel: false,
+      confirmText: '知道了'
+    })
+  } catch (e) {
+    uni.hideLoading()
+    uni.showModal({
+      title: '检查更新失败',
+      content: (e && e.message) || '请检查网络后重试',
+      showCancel: false,
+      confirmText: '知道了'
+    })
+  } finally {
+    checkingUpdate.value = false
+  }
+}
+
+function saveFeedUrl() {
+  const value = String(feedUrlDraft.value || '').trim()
+  if (value && !/^https?:\/\//i.test(value)) {
+    uni.showToast({ title: '更新地址必须以 http(s) 开头', icon: 'none' })
+    feedUrlDraft.value = feedUrlOf(state.settings)
+    return
+  }
+
+  updateSettings({ updateFeedUrl: value || DEFAULT_UPDATE_FEED_URL })
+  feedUrlDraft.value = feedUrlOf(state.settings)
+  uni.showToast({ title: '更新地址已保存', icon: 'none' })
 }
 
 function persist(patch) {
@@ -604,6 +699,18 @@ function clearAll() {
 .perm-pill.unsupported {
   background: var(--surface-2);
   color: var(--ink-3);
+}
+
+.feed-input {
+  width: 100%;
+  height: 72rpx;
+  margin-top: 12rpx;
+  padding: 0 18rpx;
+  border-radius: 14rpx;
+  background: var(--surface-2);
+  border: 2rpx solid var(--line);
+  font-size: 22rpx;
+  color: var(--ink-2);
 }
 
 .group-note {

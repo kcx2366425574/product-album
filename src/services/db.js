@@ -6,6 +6,7 @@
  * 所有值都以 JSON 字符串写入，跨端行为一致。
  */
 import { isValidDateStr, todayStr } from '@/utils/date'
+import { DEFAULT_UPDATE_FEED_URL } from '@/utils/appInfo'
 import { calcExpiry } from './expiry'
 import { normalizeAlarm } from './alarmRule'
 
@@ -25,7 +26,10 @@ export const DEFAULT_SETTINGS = {
   permissionPrompted: false,
   overdueRepeatDays: 0,
   theme: 'auto',
-  lastBackupAt: 0
+  lastBackupAt: 0,
+  // 应用内更新
+  updateFeedUrl: DEFAULT_UPDATE_FEED_URL,
+  lastUpdateCheckAt: 0
 }
 
 function preserveCorrupt(key, raw) {

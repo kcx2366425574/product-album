@@ -19,11 +19,15 @@ import {
   hasNativeScheduler
 } from '@/services/notify'
 import { shouldPromptPermission } from '@/services/permission'
+import { feedUrlOf, shouldAutoCheck } from '@/services/update'
+import { checkForUpdate } from '@/services/updater'
+import { showUpdateDialog } from '@/services/updateFlow'
 import { todayStr } from '@/utils/date'
 
 let lastScanAt = 0
 let launchPayloadHandled = false
 let permissionPrompting = false
+let updateChecking = false
 let dayTimer = null
 
 /** App 可能长时间停留在前台，跨午夜时刷新"今天"并补一次提醒扫描 */
@@ -150,6 +154,28 @@ function promptDueAlarm() {
   return true
 }
 
+/**
+ * 启动后静默检查更新，有新版才弹窗。
+ * 6 小时内只自动检查一次；用户也可以在设置页手动检查。
+ */
+function maybeCheckUpdate() {
+  // #ifdef APP-PLUS
+  if (updateChecking) return
+  if (!shouldAutoCheck(state.settings.lastUpdateCheckAt)) return
+
+  updateChecking = true
+  checkForUpdate({ feedUrl: feedUrlOf(state.settings) })
+    .then(result => {
+      updateSettings({ lastUpdateCheckAt: Date.now() })
+      if (result.status === 'update') showUpdateDialog(result.manifest)
+    })
+    .catch(() => {})
+    .finally(() => {
+      updateChecking = false
+    })
+  // #endif
+}
+
 function handleLaunchPayload() {
   if (launchPayloadHandled) return
   const payload = consumeLaunchPayload()
@@ -189,6 +215,9 @@ onShow(() => {
   rescheduleAlarms(alarmState.alarms)
   maybePromptPermission(duePromptShown)
   handleLaunchPayload()
+
+  // 避开启动时的到期提醒 / 权限弹窗，延迟静默检查
+  setTimeout(maybeCheckUpdate, 3000)
 })
 </script>
 

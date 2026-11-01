@@ -21,7 +21,8 @@ const SETTINGS_KEYS = [
   'notifyTime',
   'notifyEnabled',
   'overdueRepeatDays',
-  'theme'
+  'theme',
+  'updateFeedUrl'
 ]
 
 /**

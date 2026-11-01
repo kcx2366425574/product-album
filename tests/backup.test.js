@@ -44,6 +44,7 @@ describe('sanitizeSettings', () => {
         notifyEnabled: true,
         overdueRepeatDays: 3,
         theme: 'auto',
+        updateFeedUrl: 'https://example.com/latest.json',
         permissionPrompted: true,
         lastBackupAt: 123
       })
@@ -52,7 +53,8 @@ describe('sanitizeSettings', () => {
       notifyTime: '09:00',
       notifyEnabled: true,
       overdueRepeatDays: 3,
-      theme: 'auto'
+      theme: 'auto',
+      updateFeedUrl: 'https://example.com/latest.json'
     })
   })
 })
