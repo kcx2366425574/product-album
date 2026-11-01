@@ -1,13 +1,17 @@
 # 商品图册
 
-离线优先的「商品图片 + 使用期限提醒」工具。用 uni-app（Vue 3 + Vite）开发，一套代码同时跑 H5 网页和 Android APK。
+离线优先的「商品图片 + 使用期限提醒 + 闹钟」工具。用 uni-app（Vue 3 + Vite）开发，一套代码同时跑 H5 网页和 Android APK。
 
-核心场景：把商品图片存进 App，给每个商品设置购买日期和使用时长，临近到期时通过系统通知提醒续费。
+核心场景：把商品图片存进 App，给每个商品设置购买日期和使用时长，临近到期时通过系统通知提醒续费；同时提供独立的闹钟模块，支持复杂重复规则。
 
 ## 功能
 
 **已实现**
 
+- 双模块导航：屏幕左上角切换「商品图册」与「闹钟」，两套功能互不影响
+- 闹钟管理：新建 / 编辑 / 删除 / 开关，响铃时间与备注可自定义
+- 复杂重复规则：仅一次、每天、每周（可多选星期）、每月、每年；每月/每年支持按日期或「第几个周几」，例如每月最后一个周六、每年 5 月第二个周日
+- 闹钟响铃：复用原生定时通知，App 关闭后仍可响铃；点击通知进入闹钟模块，弹窗支持稍后 5 分钟
 - 商品增删改查：名称、分类、标签、备注、购买金额
 - 图片管理：从相册/相机导入多张、压缩、480px 缩略图、设置封面、大图预览
 - 到期计算：按天 / 月 / 年，自动处理月末和闰年（1/31 + 1 个月 = 2/28）
@@ -23,7 +27,7 @@
 - 逾期重复提醒：过期后可不重复 / 每天 / 每 3 天 / 每周继续提醒
 - 通知可靠性：通知权限检查、原生送达回写去重、设备重启后恢复排程、精确闹钟授权状态
 - 首次启动引导开启通知权限，首页提供常驻提示条
-- 数据备份：JSON 导出/导入（商品、图片、续费记录、设置），记录上次备份时间
+- 数据备份：JSON 导出/导入（商品、图片、续费记录、闹钟、设置），记录上次备份时间
 - 备份提醒：有商品且从未备份或超过 30 天未备份时，首页提示
 - 深色模式：跟随系统 / 浅色 / 深色
 - 图片保护：单张超过 8MB 拒绝导入，导入失败会提示数量
@@ -47,7 +51,8 @@
 | H5 图片存储 | IndexedDB |
 | App 图片存储 | `plus.zip.compressImage` + `_doc/` 私有目录 |
 | App 定时通知 | UTS 插件 `helper-alarm`（AlarmManager + NotificationManager） |
-| 测试 | Vitest（134 个用例）+ Edge/Playwright H5 流程检查 |
+| 闹钟排程 | JS 预展开复杂重复规则 + 原生 AlarmManager，与商品提醒使用独立排程键 |
+| 测试 | Vitest（198 个用例）+ Edge/Playwright H5 流程检查 |
 
 ## 目录结构
 
@@ -55,25 +60,30 @@
 product-album/
 ├── src/
 │   ├── pages/
-│   │   ├── index/index.vue        # 首页：概览 + 搜索 + 分类筛选 + 排序
+│   │   ├── index/index.vue        # 商品图册首页：概览 + 搜索 + 分类筛选 + 排序
 │   │   ├── detail/detail.vue      # 商品详情 + 续费 + 花费
-│   │   ├── edit/edit.vue          # 新建 / 编辑
+│   │   ├── edit/edit.vue          # 新建 / 编辑商品
 │   │   ├── calendar/calendar.vue  # 到期日历
+│   │   ├── alarm/alarm.vue        # 闹钟模块：实时时钟 + 闹钟列表
+│   │   ├── alarm/edit.vue         # 新建 / 编辑闹钟 + 重复规则 + 响铃预览
 │   │   └── settings/settings.vue  # 设置 / 备份 / 花费 / 主题
-│   ├── components/                # NavBar / ProductCard / EmptyState
+│   ├── components/                # NavBar / ProductCard / EmptyState / ModuleSwitcher
 │   ├── composables/useImageUrl.js # 图片元数据 → 可显示地址（支持缩略图）
 │   ├── services/
 │   │   ├── db.js                  # 本地存储 + 数据规范化 + 损坏备份
 │   │   ├── expiry.js              # 到期计算（纯函数）
 │   │   ├── imageStore.js          # 图片存储（H5 / App 分支）
 │   │   ├── notify.js              # 通知抽象（H5 / App 分支）
-│   │   ├── reminder.js            # 提醒扫描 + 去重 + 排程生成
+│   │   ├── reminder.js            # 商品提醒扫描 + 去重 + 排程生成
+│   │   ├── alarmRule.js           # 闹钟重复规则 + 下次响铃（纯函数）
+│   │   ├── alarmScheduler.js      # 闹钟排程 + 稍后提醒 + 响铃确认
 │   │   ├── backup.js              # 备份导出 / 导入
 │   │   ├── calendar.js            # 日历网格与到期分组
 │   │   ├── filters.js             # 分类统计 + 排序
 │   │   ├── stats.js               # 花费统计
 │   │   └── storage.js             # 图片存储占用
-│   ├── store/app.js               # 全局状态 + 派生数据
+│   ├── store/app.js               # 商品图册状态 + 派生数据
+│   ├── store/alarm.js             # 闹钟状态
 │   ├── store/theme.js             # 主题状态
 │   ├── utils/                     # 日期、ID、主题、版本
 │   └── uni_modules/helper-alarm/  # UTS 原生定时通知插件
@@ -98,10 +108,11 @@ H5 自动化检查（用本机 Edge，无需安装 Chromium）：
 node scripts/check.mjs http://localhost:5173/ docs/screenshots/home.png 390 844
 ```
 
-带交互的检查脚本放在 `scripts/actions/`，例如新增商品：
+带交互的检查脚本放在 `scripts/actions/`，例如新增商品、创建「每月最后一个周六」闹钟：
 
 ```bash
 node scripts/check.mjs http://localhost:5173/ docs/screenshots/after-add.png 390 844 scripts/actions/add-product.mjs
+node scripts/check.mjs http://localhost:5173/ docs/screenshots/alarm-home.png 390 844 scripts/actions/alarm-check.mjs
 ```
 
 ## 打包 Android APK
@@ -125,8 +136,10 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/after-add.png 390
 1. `AlarmManager.setExactAndAllowWhileIdle()` 在指定时间触发广播
 2. 广播接收器 `AlarmReceiver` 写在 `AndroidManifest.xml` 里，App 进程被杀也能由系统实例化
 3. 接收器调用 `NotificationManager.notify()` 弹通知，并把已送达的排程 id 写入 SharedPreferences
-4. 点击通知通过 `PendingIntent` 拉起 App，并携带 `productId`
+4. 点击通知通过 `PendingIntent` 拉起 App；商品提醒携带 `productId`，闹钟携带 `module=alarm` 与 `alarmId`
 5. 排程同时持久化，`BootReceiver` 在 `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 后恢复未到期闹钟
+
+商品到期提醒与闹钟使用两套独立的排程存储键，各自全量重排时只取消自己上一次注册的 id，互不覆盖。闹钟的复杂重复规则（如每月最后一个周六）由 `services/alarmRule.js` 预先展开成具体时间点，再交给 AlarmManager。
 
 已声明的权限：
 
@@ -151,8 +164,9 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/after-add.png 390
 
 ## 已知限制
 
-- H5 端只有页面打开时才能发通知，网页关闭后不会提醒
+- H5 端只有页面打开时才能发通知，网页关闭后不会提醒；闹钟在 H5 端也只在页面打开时通过前台轮询弹窗
 - 提醒排程在「启动 App / 修改商品 / 修改设置」时全量重排；如果只改系统时间不会触发重排
+- 闹钟重复规则由 JS 预先展开未来 365 天（每个闹钟最多 120 次、总计最多 400 条）。长期不打开 App 时排程会逐渐用尽，打开 App 会自动续排
 - App 端备份导出依赖 `plus.share.sendWithSystem`、导入依赖 `uni.chooseFile`，均已通过编译但需要在真机验证
 - 逾期重复提醒的原生续排（AlarmReceiver 自行排下一次）已通过 UTS→Kotlin 转换验证，需要在真机确认多个周期后的行为
 - App 已在后台时点击通知的跳转依赖 DCloud 运行时的 `onNewIntent`，冷启动场景已验证性较高
