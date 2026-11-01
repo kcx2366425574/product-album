@@ -52,7 +52,7 @@
 | App 图片存储 | `plus.zip.compressImage` + `_doc/` 私有目录 |
 | App 定时通知 | UTS 插件 `helper-alarm`（AlarmManager + NotificationManager） |
 | 闹钟排程 | JS 预展开复杂重复规则 + 原生 AlarmManager，与商品提醒使用独立排程键 |
-| 测试 | Vitest（198 个用例）+ Edge/Playwright H5 流程检查 |
+| 测试 | Vitest（199 个用例）+ Edge/Playwright H5 流程检查 |
 
 ## 目录结构
 
