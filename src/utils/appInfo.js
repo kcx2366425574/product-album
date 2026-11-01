@@ -1,7 +1,7 @@
 /** 应用版本号，需与 package.json、manifest.json 保持一致 */
-export const APP_VERSION = '1.2.0'
+export const APP_VERSION = '1.3.0'
 /** Android versionCode，需与 manifest.json 的 versionCode 保持一致 */
-export const APP_VERSION_CODE = 120
+export const APP_VERSION_CODE = 130
 
 /**
  * 默认更新源：仓库里的 releases/latest.json。
