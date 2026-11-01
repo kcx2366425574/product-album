@@ -7,11 +7,15 @@
  */
 import { isValidDateStr, todayStr } from '@/utils/date'
 import { calcExpiry } from './expiry'
+import { normalizeAlarm } from './alarmRule'
 
 const KEY_PRODUCTS = 'pa.products.v1'
 const KEY_SETTINGS = 'pa.settings.v1'
 const KEY_NOTIFY = 'pa.notify.v1'
 const KEY_PROMPT = 'pa.prompt.v1'
+const KEY_ALARMS = 'pa.alarms.v1'
+const KEY_ALARM_ACK = 'pa.alarm.ack.v1'
+const KEY_ALARM_SNOOZE = 'pa.alarm.snooze.v1'
 
 export const DEFAULT_SETTINGS = {
   schemaVersion: 1,
@@ -175,4 +179,61 @@ export function loadPromptRecord() {
 
 export function savePromptRecord(record) {
   return write(KEY_PROMPT, record || {})
+}
+
+/* ------------------------------------------------------------------ */
+/* 闹钟                                                                */
+/* ------------------------------------------------------------------ */
+
+export function loadAlarms() {
+  const list = read(KEY_ALARMS, [])
+  if (!Array.isArray(list)) return []
+  return list.map(normalizeAlarm).filter(Boolean)
+}
+
+export function saveAlarms(list) {
+  return write(KEY_ALARMS, Array.isArray(list) ? list : [])
+}
+
+export function upsertAlarm(alarm) {
+  const list = loadAlarms()
+  const normalized = normalizeAlarm(alarm)
+  if (!normalized) return null
+  const idx = list.findIndex(item => item.id === normalized.id)
+  if (idx >= 0) list[idx] = normalized
+  else list.push(normalized)
+  return saveAlarms(list) ? normalized : null
+}
+
+export function removeAlarm(id) {
+  return saveAlarms(loadAlarms().filter(item => item.id !== id))
+}
+
+/** 用户已确认过的响铃记录：排程 id → 确认时间 */
+export function loadAlarmAcks() {
+  const r = read(KEY_ALARM_ACK, {})
+  return r && typeof r === 'object' && !Array.isArray(r) ? r : {}
+}
+
+export function saveAlarmAcks(records) {
+  return write(KEY_ALARM_ACK, records || {})
+}
+
+function normalizeSnooze(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const alarmId = String(raw.alarmId || '')
+  const at = toInt(raw.at)
+  if (!alarmId || at <= 0) return null
+  return { alarmId, at }
+}
+
+/** 「稍后提醒」的一次性排程，重启 App 后仍能恢复 */
+export function loadAlarmSnoozes() {
+  const list = read(KEY_ALARM_SNOOZE, [])
+  if (!Array.isArray(list)) return []
+  return list.map(normalizeSnooze).filter(Boolean)
+}
+
+export function saveAlarmSnoozes(list) {
+  return write(KEY_ALARM_SNOOZE, Array.isArray(list) ? list : [])
 }

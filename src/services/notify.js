@@ -25,9 +25,9 @@ import {
 const SCHEDULED_IDS_KEY = 'pa.scheduled.ids.v1'
 
 // #ifdef APP-PLUS
-function loadScheduledIds() {
+function loadScheduledIds(storageKey = SCHEDULED_IDS_KEY) {
   try {
-    const raw = uni.getStorageSync(SCHEDULED_IDS_KEY)
+    const raw = uni.getStorageSync(storageKey)
     const list = raw ? JSON.parse(raw) : []
     return Array.isArray(list) ? list : []
   } catch (e) {
@@ -35,9 +35,9 @@ function loadScheduledIds() {
   }
 }
 
-function saveScheduledIds(ids) {
+function saveScheduledIds(ids, storageKey = SCHEDULED_IDS_KEY) {
   try {
-    uni.setStorageSync(SCHEDULED_IDS_KEY, JSON.stringify(ids || []))
+    uni.setStorageSync(storageKey, JSON.stringify(ids || []))
   } catch (e) {
     console.warn('[notify] 保存排程记录失败', e)
   }
@@ -136,16 +136,21 @@ export function notifyNow({ title, content, payload }) {
 /**
  * 全量重排未来提醒。
  * 先取消上一轮排程（id 记录在本地存储里），再逐条注册。
+ *
+ * storageKey 用于区分商品到期提醒与闹钟两套排程：
+ * 两套排程互不干扰，各自只取消自己上一次注册的 id。
+ *
  * @param {Array<{id:string,at:number,title:string,content:string,payload:object}>} entries
+ * @param {string} storageKey 排程 id 的本地存储键
  * @returns {boolean} 是否成功交给系统定时器
  */
-export function scheduleAll(entries) {
+export function scheduleAll(entries, storageKey = SCHEDULED_IDS_KEY) {
   // #ifdef APP-PLUS
   try {
     // 没有通知权限时排程没有意义，也不应该向调用方报告成功。
     // 用户授权后设置页会重新调用本函数。
     if (!nativeGetPermission()) return false
-    const prev = loadScheduledIds()
+    const prev = loadScheduledIds(storageKey)
     for (const id of prev) nativeCancel(id)
 
     const ids = []
@@ -161,7 +166,7 @@ export function scheduleAll(entries) {
       )
       ids.push(e.id)
     }
-    saveScheduledIds(ids)
+    saveScheduledIds(ids, storageKey)
     return true
   } catch (e) {
     console.error('[notify] 排程失败', e)
@@ -173,11 +178,11 @@ export function scheduleAll(entries) {
   // #endif
 }
 
-export function cancelAll() {
+export function cancelAll(storageKey = SCHEDULED_IDS_KEY) {
   // #ifdef APP-PLUS
   try {
-    for (const id of loadScheduledIds()) nativeCancel(id)
-    saveScheduledIds([])
+    for (const id of loadScheduledIds(storageKey)) nativeCancel(id)
+    saveScheduledIds([], storageKey)
   } catch (e) {
     console.warn('[notify] 取消排程失败', e)
   }
