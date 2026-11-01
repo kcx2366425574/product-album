@@ -48,6 +48,15 @@ const apkPath = path.resolve(process.cwd(), apkArg)
 if (!fs.existsSync(apkPath)) fail(`找不到 APK：${apkPath}`)
 if (path.extname(apkPath).toLowerCase() !== '.apk') fail('只接受 .apk 文件')
 
+// APK 本质是 ZIP：检查文件头，避免把下载失败的空文件或错误文件发布出去
+const header = Buffer.alloc(4)
+const fd = fs.openSync(apkPath, 'r')
+fs.readSync(fd, header, 0, 4, 0)
+fs.closeSync(fd)
+if (header.toString('hex') !== '504b0304') {
+  fail('这个文件不是有效的 APK/ZIP（文件头不是 PK）')
+}
+
 const manifest = readJson(path.join(root, 'src/manifest.json'))
 const pkg = readJson(path.join(root, 'package.json'))
 const appInfoSource = fs.readFileSync(path.join(root, 'src/utils/appInfo.js'), 'utf8')
