@@ -12,6 +12,7 @@
 - 闹钟管理：新建 / 编辑 / 删除 / 开关，响铃时间与备注可自定义
 - 复杂重复规则：仅一次、每天、每周（可多选星期）、每月、每年；每月/每年支持按日期或「第几个周几」，例如每月最后一个周六、每年 5 月第二个周日
 - 闹钟响铃：复用原生定时通知，App 关闭后仍可响铃；点击通知进入闹钟模块，弹窗支持稍后 5 分钟
+- 应用内更新：启动后静默检查仓库里的 `releases/latest.json`，发现新版本可下载 APK 并调起系统安装；设置页支持手动检查与更换更新地址
 - 商品增删改查：名称、分类、标签、备注、购买金额
 - 图片管理：从相册/相机导入多张、压缩、480px 缩略图、设置封面、大图预览
 - 到期计算：按天 / 月 / 年，自动处理月末和闰年（1/31 + 1 个月 = 2/28）
@@ -52,7 +53,8 @@
 | App 图片存储 | `plus.zip.compressImage` + `_doc/` 私有目录 |
 | App 定时通知 | UTS 插件 `helper-alarm`（AlarmManager + NotificationManager） |
 | 闹钟排程 | JS 预展开复杂重复规则 + 原生 AlarmManager，与商品提醒使用独立排程键 |
-| 测试 | Vitest（199 个用例）+ Edge/Playwright H5 流程检查 |
+| 应用更新 | 仓库内 `releases/latest.json` + `plus.runtime.install` 安装 APK |
+| 测试 | Vitest（226 个用例）+ Edge/Playwright H5 流程检查 |
 
 ## 目录结构
 
@@ -77,6 +79,9 @@ product-album/
 │   │   ├── reminder.js            # 商品提醒扫描 + 去重 + 排程生成
 │   │   ├── alarmRule.js           # 闹钟重复规则 + 下次响铃（纯函数）
 │   │   ├── alarmScheduler.js      # 闹钟排程 + 稍后提醒 + 响铃确认
+│   │   ├── update.js              # 版本比较 + latest.json 解析（纯函数）
+│   │   ├── updater.js             # 检查更新 + 下载 APK + 系统安装
+│   │   ├── updateFlow.js          # 更新弹窗 + 下载进度 + 失败引导
 │   │   ├── backup.js              # 备份导出 / 导入
 │   │   ├── calendar.js            # 日历网格与到期分组
 │   │   ├── filters.js             # 分类统计 + 排序
@@ -87,8 +92,14 @@ product-album/
 │   ├── store/theme.js             # 主题状态
 │   ├── utils/                     # 日期、ID、主题、版本
 │   └── uni_modules/helper-alarm/  # UTS 原生定时通知插件
+├── releases/                      # 更新包与 latest.json（与代码同仓库）
+│   ├── latest.example.json        # 更新源格式示例
+│   └── README.md                  # 发布流程说明
 ├── tests/                         # Vitest 单元测试
-├── scripts/                       # 基于 Edge 的 H5 自动化检查
+├── scripts/
+│   ├── release.mjs                # 发布 APK 到 releases 并生成 latest.json
+│   ├── check.mjs                  # 基于 Edge 的 H5 自动化检查
+│   └── actions/                   # 交互检查脚本
 └── docs/                          # 需求分析、截图
 ```
 
@@ -129,6 +140,40 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/alarm-home.png 39
 
 > 云打包时 DCloud 会编译 `src/uni_modules/helper-alarm` 这个 UTS 插件。本地已用 `npx uni build -p app` 验证过 App 资源编译和 UTS→Kotlin 转换（产物 `dist/build/app/uni_modules/helper-alarm/utssdk/app-android/src/index.kt`）；本机没有 Android SDK，Kotlin 编译这一步以云打包日志为准。
 
+## 应用内更新
+
+更新包、`latest.json` 和代码放在同一个仓库的 `releases/` 目录，App 从 GitHub raw 地址读取版本信息，发现新版本后下载 APK 并调起系统安装。
+
+**发布新版本**
+
+1. 修改 `package.json`、`src/manifest.json`、`src/utils/appInfo.js` 三处版本号（`scripts/release.mjs` 会校验一致性）
+2. 在 HBuilderX 云打包新的 APK
+3. 运行发布脚本：
+
+   ```bash
+   node scripts/release.mjs path/to/product-album.apk --notes "本次更新说明"
+   ```
+
+   脚本会把 APK 复制到 `releases/product-album-<版本>.apk`，并生成包含大小、SHA-256、更新说明的 `releases/latest.json`。
+
+4. 提交并推送：
+
+   ```bash
+   git add releases
+   git commit -m "release: 1.3.0"
+   git push
+   ```
+
+默认更新地址：
+
+```
+https://raw.githubusercontent.com/kcx2366425574/product-album/master/releases/latest.json
+```
+
+App 启动 3 秒后静默检查一次，6 小时内不重复检查；设置页「应用更新」可以手动检查、查看当前版本、修改更新地址。下载完成后调用 `plus.runtime.install` 打开系统安装界面。
+
+注意：覆盖安装必须使用同一签名证书；Android 8+ 需要允许「安装未知应用」；GitHub raw 在国内可能不稳定，可在设置页换成 Gitee / CDN 镜像。详细说明见 `releases/README.md`。
+
 ## 原生通知插件说明
 
 `src/uni_modules/helper-alarm` 是 UTS 插件，实现：
@@ -146,6 +191,7 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/alarm-home.png 39
 - `POST_NOTIFICATIONS`（Android 13+ 运行时权限）
 - `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`（Android 12+ 精确闹钟）
 - `RECEIVE_BOOT_COMPLETED`（设备重启后恢复排程）
+- `REQUEST_INSTALL_PACKAGES`（应用内下载并安装新 APK）
 
 限制：
 
@@ -167,6 +213,8 @@ node scripts/check.mjs http://localhost:5173/ docs/screenshots/alarm-home.png 39
 - H5 端只有页面打开时才能发通知，网页关闭后不会提醒；闹钟在 H5 端也只在页面打开时通过前台轮询弹窗
 - 提醒排程在「启动 App / 修改商品 / 修改设置」时全量重排；如果只改系统时间不会触发重排
 - 闹钟重复规则由 JS 预先展开未来 365 天（每个闹钟最多 120 次、总计最多 400 条）。长期不打开 App 时排程会逐渐用尽，打开 App 会自动续排
+- 应用内更新依赖公开仓库的 raw 地址；国内网络访问 GitHub 可能超时，可在设置页换镜像。APK 覆盖安装要求同一签名证书
+- 更新下载的 SHA-256 会写进 `latest.json` 供发布核对，App 当前不做下载后自动校验
 - App 端备份导出依赖 `plus.share.sendWithSystem`、导入依赖 `uni.chooseFile`，均已通过编译但需要在真机验证
 - 逾期重复提醒的原生续排（AlarmReceiver 自行排下一次）已通过 UTS→Kotlin 转换验证，需要在真机确认多个周期后的行为
 - App 已在后台时点击通知的跳转依赖 DCloud 运行时的 `onNewIntent`，冷启动场景已验证性较高
