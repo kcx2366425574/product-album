@@ -88,6 +88,21 @@
         </view>
       </view>
 
+      <view v-if="isApp" class="group">
+        <text class="group-title">闹钟</text>
+        <view class="group-card">
+          <view class="row row-action" @tap="onRingtoneTap">
+            <view class="row-main">
+              <text class="row-title">闹钟铃声</text>
+              <text class="row-sub">{{ ringtoneHint }}</text>
+            </view>
+            <text class="row-value ringtone-value">{{ ringtoneName || '系统铃声' }}</text>
+            <text class="row-arrow">›</text>
+          </view>
+        </view>
+        <text class="group-note">可选择本地 mp3、mp4 等音频文件；未选择时使用系统默认闹钟铃声。</text>
+      </view>
+
       <view class="group">
         <text class="group-title">外观</text>
         <view class="group-card">
@@ -230,10 +245,14 @@ import { removeImage } from '@/services/imageStore'
 import {
   cancelAll,
   canScheduleExactAlarms,
+  clearRingtone,
   ensurePermission,
   getPermissionState,
+  getRingtoneName,
   hasNativeScheduler,
-  openExactAlarmSettings
+  openExactAlarmSettings,
+  pickRingtone,
+  previewRingtone
 } from '@/services/notify'
 import { reschedule } from '@/services/reminder'
 import { cancelAlarmSchedules, rescheduleAlarms } from '@/services/alarmScheduler'
@@ -294,8 +313,13 @@ const nativeReady = ref(false)
 const exactAlarmReady = ref(true)
 const checkingUpdate = ref(false)
 const feedUrlDraft = ref('')
+const ringtoneName = ref('')
 
 const currentVersionText = computed(() => versionText(APP_VERSION, APP_VERSION_CODE))
+
+const ringtoneHint = computed(() =>
+  ringtoneName.value ? '点击更换或恢复系统铃声' : '当前使用系统默认闹钟铃声'
+)
 
 const PERMISSION_TEXT = {
   granted: '已授权',
@@ -320,10 +344,38 @@ onShow(() => {
   isApp.value = true
   nativeReady.value = hasNativeScheduler()
   exactAlarmReady.value = canScheduleExactAlarms()
+  ringtoneName.value = getRingtoneName()
   // #endif
   permissionState.value = getPermissionState()
   feedUrlDraft.value = feedUrlOf(state.settings)
 })
+
+function onRingtoneTap() {
+  const items = ringtoneName.value
+    ? ['选择本地铃声', '试听', '恢复系统铃声']
+    : ['选择本地铃声']
+  uni.showActionSheet({
+    itemList: items,
+    success: async res => {
+      const label = items[res.tapIndex]
+      if (label === '选择本地铃声') {
+        const status = await pickRingtone()
+        if (status === 'ok') ringtoneName.value = getRingtoneName()
+        return
+      }
+      if (label === '试听') {
+        previewRingtone()
+        uni.showToast({ title: '正在试听，15 秒后停止', icon: 'none' })
+        return
+      }
+      if (label === '恢复系统铃声') {
+        clearRingtone()
+        ringtoneName.value = getRingtoneName()
+        uni.showToast({ title: '已恢复系统铃声', icon: 'none' })
+      }
+    }
+  })
+}
 
 function onExactAlarmTap() {
   if (exactAlarmReady.value) return
@@ -617,6 +669,15 @@ function clearAll() {
 .row-value {
   font-size: 28rpx;
   color: var(--ink-2);
+}
+
+.ringtone-value {
+  max-width: 300rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+  margin-right: 8rpx;
 }
 
 .row-action {

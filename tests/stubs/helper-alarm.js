@@ -39,3 +39,15 @@ export function getRingingAlarmId() {
 }
 
 export function stopRinging() {}
+
+export function pickRingtone(callback) {
+  if (callback) callback('cancel', '')
+}
+
+export function getRingtoneName() {
+  return ''
+}
+
+export function clearRingtone() {}
+
+export function previewRingtone() {}

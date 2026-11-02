@@ -21,7 +21,11 @@ import {
   consumeLaunchPayload as nativeConsumeLaunchPayload,
   isRinging as nativeIsRinging,
   getRingingAlarmId as nativeGetRingingAlarmId,
-  stopRinging as nativeStopRinging
+  stopRinging as nativeStopRinging,
+  pickRingtone as nativePickRingtone,
+  getRingtoneName as nativeGetRingtoneName,
+  clearRingtone as nativeClearRingtone,
+  previewRingtone as nativePreviewRingtone
 } from '@/uni_modules/helper-alarm'
 // #endif
 
@@ -304,6 +308,69 @@ export function stopRinging() {
     nativeStopRinging()
   } catch (e) {
     console.warn('[notify] 停止铃声失败', e)
+  }
+  // #endif
+}
+
+/** 当前本地铃声名；空字符串表示使用系统闹钟铃声 */
+export function getRingtoneName() {
+  // #ifdef APP-PLUS
+  try {
+    return nativeGetRingtoneName() || ''
+  } catch (e) {
+    return ''
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  return ''
+  // #endif
+}
+
+/**
+ * 选择本地铃声文件（音频或视频，MediaPlayer 支持 mp4）。
+ * @returns {Promise<'ok'|'cancel'|'error'>} 选择结果
+ */
+export function pickRingtone() {
+  // #ifdef APP-PLUS
+  return new Promise(resolve => {
+    try {
+      nativePickRingtone((status, name) => {
+        resolve(status || 'error')
+        if (status === 'ok' && name) {
+          uni.showToast({ title: `已选择：${name}`, icon: 'none' })
+        } else if (status === 'error') {
+          uni.showToast({ title: '无法使用这个铃声，请重试', icon: 'none' })
+        }
+      })
+    } catch (e) {
+      console.warn('[notify] 选择铃声失败', e)
+      resolve('error')
+    }
+  })
+  // #endif
+  // #ifndef APP-PLUS
+  return Promise.resolve('error')
+  // #endif
+}
+
+/** 恢复系统默认闹钟铃声 */
+export function clearRingtone() {
+  // #ifdef APP-PLUS
+  try {
+    nativeClearRingtone()
+  } catch (e) {
+    console.warn('[notify] 恢复系统铃声失败', e)
+  }
+  // #endif
+}
+
+/** 试听当前铃声 */
+export function previewRingtone() {
+  // #ifdef APP-PLUS
+  try {
+    nativePreviewRingtone()
+  } catch (e) {
+    console.warn('[notify] 试听铃声失败', e)
   }
   // #endif
 }
