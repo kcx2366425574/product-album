@@ -4,7 +4,7 @@
  * 原理：
  * 1. AlarmManager 在目标时间点触发一个显式 BroadcastReceiver（AlarmReceiver）
  * 2. Receiver 由系统在 App 进程不存在时也会实例化，所以 App 被杀也能收到
- * 3. Receiver 内用 NotificationManager 弹出通知栏消息
+ * 3. 到期提醒弹通知；闹钟额外启动前台服务 AlarmRingService 循环播放闹钟铃声
  * 4. 点击通知通过 PendingIntent 拉起 App，并带上 payload
  *
  * 插件包名由 HBuilderX 按规则生成：uts.sdk.modules.(插件ID转驼峰)
@@ -23,6 +23,14 @@ import SharedPreferences from "android.content.SharedPreferences"
 import Build from "android.os.Build"
 import Settings from "android.provider.Settings"
 import PackageManager from "android.content.pm.PackageManager"
+import Service from "android.app.Service"
+import IBinder from "android.os.IBinder"
+import MediaPlayer from "android.media.MediaPlayer"
+import AudioManager from "android.media.AudioManager"
+import AudioAttributes from "android.media.AudioAttributes"
+import RingtoneManager from "android.media.RingtoneManager"
+import PowerManager from "android.os.PowerManager"
+import Vibrator from "android.os.Vibrator"
 import System from "java.lang.System"
 import { UTSAndroid } from "io.dcloud.uts"
 import { PermissionCallback } from "../interface.uts"
@@ -30,13 +38,29 @@ import { PermissionCallback } from "../interface.uts"
 const CHANNEL_ID : string = "pa_reminder"
 const CHANNEL_NAME : string = "到期提醒"
 const CHANNEL_DESC : string = "商品使用期限到期提醒"
+const RING_CHANNEL_ID : string = "pa_alarm_ring"
+const RING_CHANNEL_NAME : string = "闹钟铃声"
+const RING_CHANNEL_DESC : string = "闹钟响铃时的前台播放状态"
 const EXTRA_PAYLOAD : string = "pa_payload"
 const ACTION_FIRE : string = "uts.sdk.modules.helperAlarm.FIRE"
+const ACTION_STOP_RING : string = "uts.sdk.modules.helperAlarm.STOP_RING"
+const ACTION_SNOOZE_RING : string = "uts.sdk.modules.helperAlarm.SNOOZE_RING"
 const ACTION_REQUEST_EXACT_ALARM : string = "android.settings.REQUEST_SCHEDULE_EXACT_ALARM"
 const PENDING_FLAGS : number = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
 const PREFS_NAME : string = "pa_alarm"
 const DELIVERED_KEY : string = "delivered_ids"
 const DELIVERED_MAX : number = 200
+const RING_NOTIFICATION_ID : number = 0x9A01
+const RING_TIMEOUT_MS : number = 5 * 60 * 1000
+const SNOOZE_MINUTES : number = 5
+
+/* 闹钟响铃状态：前台服务与 JS 层（打开 App 后关闭铃声）共享 */
+let ringActive : boolean = false
+let ringAlarmId : string = ""
+let ringPlayer : MediaPlayer | null = null
+let ringVibrator : Vibrator | null = null
+let ringTimeoutTimer : number = -1
+let ringVibrationTimer : number = -1
 
 function getPrefs(context : Context) : SharedPreferences {
   return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -126,6 +150,378 @@ function showNotification(context : Context, id : string, title : string, conten
   manager.notify(hashId(id).toInt(), buildNotification(context, title, content, payload))
 }
 
+/* ------------------------------------------------------------------ */
+/* 闹钟响铃：前台服务 + 循环铃声 + 震动                                  */
+/* ------------------------------------------------------------------ */
+
+function ensureRingChannel(context : Context) : void {
+  if (Build.VERSION.SDK_INT < 26) return
+  const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+  if (manager.getNotificationChannel(RING_CHANNEL_ID) != null) return
+  const channel = new NotificationChannel(RING_CHANNEL_ID, RING_CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH)
+  channel.setDescription(RING_CHANNEL_DESC)
+  // 铃声由 MediaPlayer 自己播放，通知渠道保持静音，避免只响一声通知音
+  channel.setSound(null, null)
+  channel.enableVibration(false)
+  channel.setShowBadge(false)
+  manager.createNotificationChannel(channel)
+}
+
+/** 从排程 id（alarm:<alarmId>:<at>）里取出闹钟 id */
+function alarmIdOf(entryId : string) : string {
+  const parts = entryId.split(":")
+  if (parts.length >= 2 && (parts[0] == "alarm" || parts[0] == "alarm-snooze")) return parts[1]
+  return ""
+}
+
+function isAlarmEntry(id : string) : boolean {
+  return id.startsWith("alarm:") || id.startsWith("alarm-snooze:")
+}
+
+function buildRingNotification(
+  context : Context,
+  entryId : string,
+  title : string,
+  content : string,
+  payload : string
+) : Notification {
+  ensureRingChannel(context)
+
+  let builder : Notification.Builder
+  if (Build.VERSION.SDK_INT >= 26) {
+    builder = new Notification.Builder(context, RING_CHANNEL_ID)
+  } else {
+    builder = new Notification.Builder(context)
+  }
+
+  builder.setContentTitle(title)
+  builder.setContentText(content)
+  builder.setSmallIcon(smallIcon(context).toInt())
+  builder.setOngoing(true)
+  builder.setAutoCancel(false)
+  builder.setCategory(Notification.CATEGORY_ALARM)
+  builder.setPriority(Notification.PRIORITY_MAX)
+  builder.setVisibility(Notification.VISIBILITY_PUBLIC)
+  builder.setShowWhen(true)
+  builder.setOnlyAlertOnce(true)
+
+  const launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName())
+  if (launchIntent != null) {
+    launchIntent.putExtra(EXTRA_PAYLOAD, payload)
+    launchIntent.setFlags(
+      Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP
+    )
+    const contentIntent = PendingIntent.getActivity(
+      context,
+      hashId(entryId).toInt(),
+      launchIntent,
+      PENDING_FLAGS.toInt()
+    )
+    builder.setContentIntent(contentIntent)
+    // 锁屏 / 灭屏时直接拉起 App，效果接近系统闹钟
+    try {
+      builder.setFullScreenIntent(contentIntent, true)
+    } catch (e) {
+      console.log("[helper-alarm] 设置全屏提醒失败: " + e)
+    }
+  }
+
+  // 通知栏里的「稍后 5 分钟」和「关闭」操作
+  const snoozeIntent = new Intent(context, UTSAndroid.getJavaClass(AlarmRingActionReceiver))
+  snoozeIntent.setAction(ACTION_SNOOZE_RING)
+  snoozeIntent.putExtra("id", entryId)
+  snoozeIntent.putExtra("title", title)
+  snoozeIntent.putExtra("content", content)
+  snoozeIntent.putExtra("payload", payload)
+  const snoozePending = PendingIntent.getBroadcast(
+    context,
+    hashId("snooze:" + entryId).toInt(),
+    snoozeIntent,
+    PENDING_FLAGS.toInt()
+  )
+
+  const stopIntent = new Intent(context, UTSAndroid.getJavaClass(AlarmRingActionReceiver))
+  stopIntent.setAction(ACTION_STOP_RING)
+  const stopPending = PendingIntent.getBroadcast(
+    context,
+    hashId("stop:" + entryId).toInt(),
+    stopIntent,
+    PENDING_FLAGS.toInt()
+  )
+
+  builder.addAction(smallIcon(context).toInt(), "稍后 " + SNOOZE_MINUTES + " 分钟", snoozePending)
+  builder.addAction(smallIcon(context).toInt(), "关闭", stopPending)
+  return builder.build()
+}
+
+function stopPlayback() : void {
+  const player = ringPlayer
+  ringPlayer = null
+  if (player == null) return
+  try {
+    if (player.isPlaying()) player.stop()
+  } catch (e) {
+    // 已经停止时 stop() 会抛异常，忽略
+  }
+  try {
+    player.release()
+  } catch (e) {
+    // 忽略释放异常
+  }
+}
+
+function tryPlayUri(context : Context, uri : Uri | null) : boolean {
+  if (uri == null) return false
+  const player = new MediaPlayer()
+  try {
+    const attrs = new AudioAttributes.Builder()
+      .setUsage(AudioAttributes.USAGE_ALARM)
+      .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+      .build()
+    player.setAudioAttributes(attrs)
+    player.setDataSource(context, uri)
+    player.setLooping(true)
+    player.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+    player.prepare()
+    player.start()
+    ringPlayer = player
+    return true
+  } catch (e) {
+    console.log("[helper-alarm] 播放铃声失败: " + e)
+    try {
+      player.release()
+    } catch (e2) {
+      // 忽略
+    }
+    return false
+  }
+}
+
+function startPlayback(context : Context) : void {
+  stopPlayback()
+
+  // 把闹钟音量调到最大，避免铃声被静音或音量过低盖过去
+  try {
+    const audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    audioManager.setStreamVolume(
+      AudioManager.STREAM_ALARM,
+      audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+      0
+    )
+  } catch (e) {
+    console.log("[helper-alarm] 调整闹钟音量失败: " + e)
+  }
+
+  // 插件内置铃声优先：把 pa_ringtone.mp3 / pa_ringtone.mp4 放到 res/raw 即生效
+  const rawId = context.getResources().getIdentifier("pa_ringtone", "raw", context.getPackageName())
+  if (rawId != 0) {
+    const rawUri = Uri.parse("android.resource://" + context.getPackageName() + "/" + rawId)
+    if (tryPlayUri(context, rawUri)) return
+  }
+
+  // 与系统闹钟一致：使用系统设置的默认闹钟铃声
+  if (tryPlayUri(context, RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_ALARM))) return
+  if (tryPlayUri(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))) return
+  if (tryPlayUri(context, RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE))) return
+  if (tryPlayUri(context, RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_NOTIFICATION))) return
+  tryPlayUri(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+}
+
+function stopVibration() : void {
+  if (ringVibrationTimer >= 0) {
+    clearInterval(ringVibrationTimer)
+    ringVibrationTimer = -1
+  }
+  const vibrator = ringVibrator
+  ringVibrator = null
+  if (vibrator == null) return
+  try {
+    vibrator.cancel()
+  } catch (e) {
+    // 忽略
+  }
+}
+
+function startVibration(context : Context) : void {
+  stopVibration()
+  try {
+    const vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    ringVibrator = vibrator
+    const duration = 700
+    const pulse = () => {
+      const v = ringVibrator
+      if (v == null) return
+      try {
+        v.vibrate(duration.toLong())
+      } catch (e) {
+        // 忽略：部分设备在免打扰模式下禁止震动
+      }
+    }
+    pulse()
+    ringVibrationTimer = setInterval(pulse, 1600)
+  } catch (e) {
+    console.log("[helper-alarm] 启动震动失败: " + e)
+  }
+}
+
+function clearRingTimeout() : void {
+  if (ringTimeoutTimer >= 0) {
+    clearTimeout(ringTimeoutTimer)
+    ringTimeoutTimer = -1
+  }
+}
+
+function scheduleRingTimeout(context : Context) : void {
+  clearRingTimeout()
+  // 与系统闹钟一样限制最长响铃时间，避免一直响个不停
+  ringTimeoutTimer = setTimeout(() => {
+    ringTimeoutTimer = -1
+    stopRing(context)
+  }, RING_TIMEOUT_MS)
+}
+
+function startRingService(
+  context : Context,
+  entryId : string,
+  title : string,
+  content : string,
+  payload : string
+) : void {
+  const intent = new Intent(context, UTSAndroid.getJavaClass(AlarmRingService))
+  intent.putExtra("id", entryId)
+  intent.putExtra("title", title)
+  intent.putExtra("content", content)
+  intent.putExtra("payload", payload)
+  try {
+    if (Build.VERSION.SDK_INT >= 26) {
+      context.startForegroundService(intent)
+    } else {
+      context.startService(intent)
+    }
+    return
+  } catch (e) {
+    // Android 12+ 后台启动前台服务可能被限制，退化为进程内直接播放
+    console.log("[helper-alarm] 启动闹钟响铃服务失败，改为进程内播放: " + e)
+  }
+
+  try {
+    ringActive = true
+    ringAlarmId = alarmIdOf(entryId)
+    const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    manager.notify(
+      RING_NOTIFICATION_ID.toInt(),
+      buildRingNotification(context, entryId, title, content, payload)
+    )
+    startPlayback(context)
+    startVibration(context)
+    scheduleRingTimeout(context)
+  } catch (e) {
+    console.log("[helper-alarm] 进程内播放铃声失败: " + e)
+  }
+}
+
+/** 停止响铃：停服务、清通知、复位状态。通知栏按钮和 JS 打开 App 时都会调用 */
+function stopRing(context : Context) : void {
+  try {
+    context.stopService(new Intent(context, UTSAndroid.getJavaClass(AlarmRingService)))
+  } catch (e) {
+    console.log("[helper-alarm] 停止响铃服务失败: " + e)
+  }
+  try {
+    const manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    manager.cancel(RING_NOTIFICATION_ID.toInt())
+  } catch (e) {
+    // 忽略
+  }
+  // 服务可能没启动成功（退化为进程内播放），这里也统一清掉播放器和震动
+  stopPlayback()
+  stopVibration()
+  clearRingTimeout()
+  ringActive = false
+}
+
+/**
+ * 闹钟响铃前台服务。
+ * 用前台服务而不是直接在 Receiver 里播放，避免 App 进程被系统回收后铃声中断。
+ */
+export class AlarmRingService extends Service {
+  constructor() {
+    super()
+  }
+
+  override onBind(intent : Intent) : IBinder | null {
+    return null
+  }
+
+  override onStartCommand(intent : Intent, flags : Int, startId : Int) : Int {
+    const context = this.getApplicationContext()
+    const entryId = intent.getStringExtra("id") ?? ""
+    const title = intent.getStringExtra("title") ?? "闹钟"
+    const content = intent.getStringExtra("content") ?? ""
+    const payload = intent.getStringExtra("payload") ?? ""
+
+    ringActive = true
+    ringAlarmId = alarmIdOf(entryId)
+
+    try {
+      this.startForeground(
+        RING_NOTIFICATION_ID.toInt(),
+        buildRingNotification(context, entryId, title, content, payload)
+      )
+    } catch (e) {
+      console.log("[helper-alarm] 显示闹钟通知失败: " + e)
+    }
+
+    startPlayback(context)
+    startVibration(context)
+    scheduleRingTimeout(context)
+    return Service.START_NOT_STICKY
+  }
+
+  override onDestroy() : void {
+    ringActive = false
+    stopPlayback()
+    stopVibration()
+    clearRingTimeout()
+    try {
+      this.stopForeground(true)
+    } catch (e) {
+      // 忽略
+    }
+    super.onDestroy()
+  }
+}
+
+/**
+ * 通知栏「关闭 / 稍后」按钮。
+ * 稍后提醒直接在原生侧重排一次闹钟，App 不打开也能再响。
+ */
+export class AlarmRingActionReceiver extends BroadcastReceiver {
+  constructor() {
+    super()
+  }
+
+  override onReceive(context : Context, intent : Intent) : void {
+    const action = intent.getAction() ?? ""
+    if (action == ACTION_SNOOZE_RING) {
+      try {
+        const entryId = intent.getStringExtra("id") ?? ""
+        const title = intent.getStringExtra("title") ?? "闹钟"
+        const content = intent.getStringExtra("content") ?? ""
+        const payload = intent.getStringExtra("payload") ?? ""
+        const alarmId = alarmIdOf(entryId)
+        const at = parseInt((System.currentTimeMillis() + SNOOZE_MINUTES * 60 * 1000).toString(), 10)
+        const snoozeId = "alarm-snooze:" + (alarmId.length > 0 ? alarmId : entryId) + ":" + at
+        registerAlarm(context, snoozeId, at, title, content, payload, 0)
+        saveScheduleMeta(context, snoozeId, at, title, content, payload, 0)
+      } catch (e) {
+        console.log("[helper-alarm] 稍后提醒失败: " + e)
+      }
+    }
+    stopRing(context)
+  }
+}
+
 /**
  * 到点触发的广播接收器。
  * 必须无参构造，系统会反射实例化。
@@ -144,7 +540,12 @@ export class AlarmReceiver extends BroadcastReceiver {
     // 进程被杀后 UTSAndroid.getAppContext() 可能为空，这里必须用广播自带的 context
     if (!notificationsEnabled(context)) return
     appendDelivered(context, id)
-    showNotification(context, id, title, content, payload)
+    if (isAlarmEntry(id)) {
+      // 闹钟：前台服务循环播放铃声，通知栏提供「关闭 / 稍后」
+      startRingService(context, id, title, content, payload)
+    } else {
+      showNotification(context, id, title, content, payload)
+    }
 
     // 逾期重复：本次弹完后再排下一次，App 不打开也能持续提醒
     if (repeatDays > 0) {
@@ -434,4 +835,21 @@ export function consumeLaunchPayload() : string {
   if (payload == null) return ""
   intent.removeExtra(EXTRA_PAYLOAD)
   return payload
+}
+
+/** 当前是否正在响铃 */
+export function isRinging() : boolean {
+  return ringActive
+}
+
+/** 正在响铃的闹钟 id；没有响铃时返回空字符串 */
+export function getRingingAlarmId() : string {
+  return ringActive ? ringAlarmId : ""
+}
+
+/** 打开 App / 用户确认后停止铃声 */
+export function stopRinging() : void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return
+  stopRing(context)
 }

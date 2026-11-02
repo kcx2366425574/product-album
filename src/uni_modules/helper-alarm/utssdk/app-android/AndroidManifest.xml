@@ -6,11 +6,26 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application>
         <!-- AlarmManager 到点后由系统实例化，App 进程被杀也能收到 -->
         <receiver
             android:name="uts.sdk.modules.helperAlarm.AlarmReceiver"
+            android:exported="false" />
+        <!-- 闹钟响铃前台服务：循环播放铃声，进程被回收后仍能继续响 -->
+        <service
+            android:name="uts.sdk.modules.helperAlarm.AlarmRingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <!-- 通知栏「关闭 / 稍后 5 分钟」按钮 -->
+        <receiver
+            android:name="uts.sdk.modules.helperAlarm.AlarmRingActionReceiver"
             android:exported="false" />
         <!-- 设备重启 / 应用更新后恢复被系统清空的闹钟 -->
         <receiver
