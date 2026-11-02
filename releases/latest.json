@@ -1,9 +1,9 @@
 {
-  "versionName": "1.3.1",
-  "versionCode": 131,
-  "apk": "product-album-1.3.1.apk",
-  "size": 14965199,
-  "sha256": "d9933db1f4c209ad03ff6249e3902502324f0be673df828cc1c6700eefa71524",
-  "notes": "默认更新源改为 jsDelivr，提升应用内检查与下载更新的网络稳定性",
-  "publishedAt": 1793552159280
+  "versionName": "1.4.0",
+  "versionCode": 140,
+  "apk": "product-album-1.4.0.apk",
+  "size": 14977487,
+  "sha256": "c7faeb71e6aa2a4cd1ba9e8ac36c1ca6fad646ac36193956ad84723597346fe7",
+  "notes": "新增闹钟循环铃声与本地铃声选择：到点循环播放并震动，通知栏支持关闭/稍后 5 分钟，设置页可选择本地 mp3、mp4 等铃声。",
+  "publishedAt": 1793640952201
 }
