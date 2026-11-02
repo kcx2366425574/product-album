@@ -1,5 +1,5 @@
 <script setup>
-import { onLaunch, onShow } from '@dcloudio/uni-app'
+import { onHide, onLaunch, onShow } from '@dcloudio/uni-app'
 import { initStore, refreshToday, state, updateSettings } from '@/store/app'
 import { alarmState, initAlarms } from '@/store/alarm'
 import { markDelivered, pruneNotifyRecords, reschedule, runScan } from '@/services/reminder'
@@ -16,7 +16,10 @@ import {
   consumeLaunchPayload,
   ensurePermission,
   getPermissionState,
-  hasNativeScheduler
+  getRingingAlarmId,
+  hasNativeScheduler,
+  isRinging,
+  stopRinging
 } from '@/services/notify'
 import { shouldPromptPermission } from '@/services/permission'
 import { feedUrlOf, shouldAutoCheck } from '@/services/update'
@@ -29,6 +32,8 @@ let launchPayloadHandled = false
 let permissionPrompting = false
 let updateChecking = false
 let dayTimer = null
+let ringTimer = null
+let lastRingOpenAt = 0
 
 /** App 可能长时间停留在前台，跨午夜时刷新"今天"并补一次提醒扫描 */
 function startDayTimer() {
@@ -41,6 +46,55 @@ function startDayTimer() {
     // H5 / 无通知权限时，靠前台轮询补上闹钟弹窗
     promptDueAlarm()
   }, 60 * 1000)
+}
+
+/**
+ * 打开闹钟响铃页。
+ * 已经在闹钟页时用事件通知页面弹窗，避免重复压入页面。
+ */
+function openAlarmRing(alarmId) {
+  if (!alarmId) return
+  // 原生响铃 + 通知点击可能在同一时刻触发，只处理一次
+  const now = Date.now()
+  if (now - lastRingOpenAt < 1500) return
+  lastRingOpenAt = now
+
+  const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+  const current = pages.length ? pages[pages.length - 1] : null
+  if (current && current.route === 'pages/alarm/alarm') {
+    uni.$emit('alarm:ring', alarmId)
+    return
+  }
+  uni.navigateTo({
+    url: `/pages/alarm/alarm?ring=${encodeURIComponent(alarmId)}`,
+    fail: () => {
+      uni.reLaunch({ url: `/pages/alarm/alarm?ring=${encodeURIComponent(alarmId)}` })
+    }
+  })
+}
+
+/**
+ * 原生闹钟正在响铃时，打开 App 就停止铃声并进入闹钟页。
+ * App 在前台时靠 3 秒轮询，保证到点后也能看到弹窗。
+ */
+function handleRingingAlarm() {
+  if (!isRinging()) return false
+  const alarmId = getRingingAlarmId()
+  stopRinging()
+  openAlarmRing(alarmId)
+  return true
+}
+
+function startRingWatch() {
+  if (ringTimer) return
+  ringTimer = setInterval(handleRingingAlarm, 3 * 1000)
+}
+
+function stopRingWatch() {
+  if (ringTimer) {
+    clearInterval(ringTimer)
+    ringTimer = null
+  }
 }
 
 function scanAndPrompt() {
@@ -183,10 +237,10 @@ function handleLaunchPayload() {
   launchPayloadHandled = true
 
   if (payload.module === 'alarm' && payload.alarmId) {
+    // 通知点击进入：铃声可能还在响，先停掉再弹「闹钟响了」
     setTimeout(() => {
-      uni.navigateTo({
-        url: `/pages/alarm/alarm?ring=${encodeURIComponent(payload.alarmId)}`
-      })
+      stopRinging()
+      openAlarmRing(payload.alarmId)
     }, 300)
     return
   }
@@ -214,10 +268,18 @@ onShow(() => {
   promptDueAlarm()
   rescheduleAlarms(alarmState.alarms)
   maybePromptPermission(duePromptShown)
+  // 闹钟正在响铃时，回到 App 立即停止铃声并进入响铃页
+  handleRingingAlarm()
   handleLaunchPayload()
+  startRingWatch()
 
   // 避开启动时的到期提醒 / 权限弹窗，延迟静默检查
   setTimeout(maybeCheckUpdate, 3000)
+})
+
+onHide(() => {
+  // 退到后台时停止轮询，避免把正在响铃的闹钟误停掉
+  stopRingWatch()
 })
 </script>
 

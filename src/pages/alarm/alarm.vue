@@ -89,7 +89,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import { alarmState, initAlarms, setAlarmEnabled } from '@/store/alarm'
 import { WEEKDAY_LABELS, describeRule, nextOccurrence } from '@/services/alarmRule'
 import { rescheduleAlarms, snoozeAlarm } from '@/services/alarmScheduler'
-import { ensurePermission, getPermissionState } from '@/services/notify'
+import { ensurePermission, getPermissionState, stopRinging } from '@/services/notify'
 import { daysBetween, formatDate, pad2, todayStr } from '@/utils/date'
 import { themeClass } from '@/store/theme'
 
@@ -98,6 +98,7 @@ const isApp = ref(false)
 const permissionState = ref('granted')
 let clockTimer = null
 let pendingRing = ''
+let ringDialogVisible = false
 
 const clockText = computed(() => {
   const d = new Date(now.value)
@@ -179,8 +180,15 @@ function stopClock() {
   }
 }
 
+function onRingEvent(alarmId) {
+  if (typeof alarmId !== 'string' || !alarmId) return
+  setTimeout(() => showRing(alarmId), 100)
+}
+
 onLoad(options => {
   pendingRing = options && options.ring ? String(options.ring) : ''
+  // App.vue 已经在本页时通过事件通知，避免重复 navigateTo
+  uni.$on('alarm:ring', onRingEvent)
 })
 
 onShow(() => {
@@ -200,7 +208,10 @@ onShow(() => {
 })
 
 onHide(stopClock)
-onUnload(stopClock)
+onUnload(() => {
+  stopClock()
+  uni.$off('alarm:ring', onRingEvent)
+})
 
 function onToggle(alarm, event) {
   const ok = setAlarmEnabled(alarm.id, event.detail.value)
@@ -229,9 +240,16 @@ function editAlarm(alarm) {
 }
 
 function showRing(alarmId) {
+  if (ringDialogVisible) return
   const alarm = alarmState.alarms.find(item => item.id === alarmId)
-  if (!alarm) return
+  if (!alarm) {
+    stopRinging()
+    return
+  }
 
+  // 响铃页/通知可能同时触发，先停掉原生铃声再弹窗
+  stopRinging()
+  ringDialogVisible = true
   uni.showModal({
     title: `${alarm.title} · 闹钟响了`,
     content: `${alarm.time} · ${describeRule(alarm.rule)}`,
@@ -244,6 +262,9 @@ function showRing(alarmId) {
         title: at ? '5 分钟后再提醒' : '稍后提醒失败',
         icon: 'none'
       })
+    },
+    complete: () => {
+      ringDialogVisible = false
     }
   })
 }

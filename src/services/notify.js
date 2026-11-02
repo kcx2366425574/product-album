@@ -18,7 +18,10 @@ import {
   canScheduleExactAlarms as nativeCanScheduleExactAlarms,
   openExactAlarmSettings as nativeOpenExactAlarmSettings,
   consumeDeliveredIds as nativeConsumeDeliveredIds,
-  consumeLaunchPayload as nativeConsumeLaunchPayload
+  consumeLaunchPayload as nativeConsumeLaunchPayload,
+  isRinging as nativeIsRinging,
+  getRingingAlarmId as nativeGetRingingAlarmId,
+  stopRinging as nativeStopRinging
 } from '@/uni_modules/helper-alarm'
 // #endif
 
@@ -263,5 +266,44 @@ export function consumeLaunchPayload() {
   // #endif
   // #ifndef APP-PLUS
   return null
+  // #endif
+}
+
+/** 闹钟是否正在响铃（仅 App 原生端） */
+export function isRinging() {
+  // #ifdef APP-PLUS
+  try {
+    return !!nativeIsRinging()
+  } catch (e) {
+    return false
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  return false
+  // #endif
+}
+
+/** 正在响铃的闹钟 id；没有响铃时返回空字符串 */
+export function getRingingAlarmId() {
+  // #ifdef APP-PLUS
+  try {
+    return nativeGetRingingAlarmId() || ''
+  } catch (e) {
+    return ''
+  }
+  // #endif
+  // #ifndef APP-PLUS
+  return ''
+  // #endif
+}
+
+/** 停止原生闹钟铃声 */
+export function stopRinging() {
+  // #ifdef APP-PLUS
+  try {
+    nativeStopRinging()
+  } catch (e) {
+    console.warn('[notify] 停止铃声失败', e)
+  }
   // #endif
 }

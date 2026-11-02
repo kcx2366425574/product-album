@@ -29,3 +29,13 @@ export function consumeDeliveredIds() {
 export function consumeLaunchPayload() {
   return ''
 }
+
+export function isRinging() {
+  return false
+}
+
+export function getRingingAlarmId() {
+  return ''
+}
+
+export function stopRinging() {}
