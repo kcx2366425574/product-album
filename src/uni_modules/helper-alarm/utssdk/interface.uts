@@ -4,3 +4,10 @@
  */
 
 export type PermissionCallback = (granted : boolean) => void
+
+/**
+ * 选择本地铃声的回调。
+ * status: ok / cancel / error
+ * name: 选中文件的显示名（status 为 ok 时有效）
+ */
+export type RingtonePickCallback = (status : string, name : string) => void

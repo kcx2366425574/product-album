@@ -24,6 +24,7 @@ import Build from "android.os.Build"
 import Settings from "android.provider.Settings"
 import PackageManager from "android.content.pm.PackageManager"
 import Service from "android.app.Service"
+import Activity from "android.app.Activity"
 import IBinder from "android.os.IBinder"
 import MediaPlayer from "android.media.MediaPlayer"
 import AudioManager from "android.media.AudioManager"
@@ -31,9 +32,10 @@ import AudioAttributes from "android.media.AudioAttributes"
 import RingtoneManager from "android.media.RingtoneManager"
 import PowerManager from "android.os.PowerManager"
 import Vibrator from "android.os.Vibrator"
+import OpenableColumns from "android.provider.OpenableColumns"
 import System from "java.lang.System"
 import { UTSAndroid } from "io.dcloud.uts"
-import { PermissionCallback } from "../interface.uts"
+import { PermissionCallback, RingtonePickCallback } from "../interface.uts"
 
 const CHANNEL_ID : string = "pa_reminder"
 const CHANNEL_NAME : string = "到期提醒"
@@ -53,6 +55,10 @@ const DELIVERED_MAX : number = 200
 const RING_NOTIFICATION_ID : number = 0x9A01
 const RING_TIMEOUT_MS : number = 5 * 60 * 1000
 const SNOOZE_MINUTES : number = 5
+const RINGTONE_URI_KEY : string = "ringtone_uri"
+const RINGTONE_NAME_KEY : string = "ringtone_name"
+const PICK_RINGTONE_REQUEST : number = 0x9A02
+const PREVIEW_TIMEOUT_MS : number = 15 * 1000
 
 /* 闹钟响铃状态：前台服务与 JS 层（打开 App 后关闭铃声）共享 */
 let ringActive : boolean = false
@@ -61,6 +67,8 @@ let ringPlayer : MediaPlayer | null = null
 let ringVibrator : Vibrator | null = null
 let ringTimeoutTimer : number = -1
 let ringVibrationTimer : number = -1
+let ringtonePickCallback : RingtonePickCallback | null = null
+let ringtonePickHooked : boolean = false
 
 function getPrefs(context : Context) : SharedPreferences {
   return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -297,6 +305,110 @@ function tryPlayUri(context : Context, uri : Uri | null) : boolean {
   }
 }
 
+/** 用户选择的本地铃声；未选择或读取失败时返回 null，回退到系统闹钟铃声 */
+function customRingtoneUri(context : Context) : Uri | null {
+  try {
+    const raw = getPrefs(context).getString(RINGTONE_URI_KEY, "") ?? ""
+    if (raw.length == 0) return null
+    return Uri.parse(raw)
+  } catch (e) {
+    return null
+  }
+}
+
+/** 查询文件显示名，用于设置页展示 */
+function queryDisplayName(context : Context, uri : Uri) : string {
+  try {
+    const cursor = context.getContentResolver().query(uri, null, null, null, null)
+    if (cursor != null) {
+      try {
+        if (cursor.moveToFirst()) {
+          const index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+          if (index >= 0) {
+            const name = cursor.getString(index)
+            if (name != null && name.length > 0) return name
+          }
+        }
+      } finally {
+        cursor.close()
+      }
+    }
+  } catch (e) {
+    console.log("[helper-alarm] 读取铃声文件名失败: " + e)
+  }
+  return uri.getLastPathSegment() ?? ""
+}
+
+/** 选择前先尝试 prepare 一次，避免选了无法解码的文件 */
+function canPlayUri(context : Context, uri : Uri) : boolean {
+  const player = new MediaPlayer()
+  try {
+    player.setDataSource(context, uri)
+    player.prepare()
+    player.release()
+    return true
+  } catch (e) {
+    try {
+      player.release()
+    } catch (e2) {
+      // 忽略
+    }
+    return false
+  }
+}
+
+function setPickResult(status : string, name : string) : void {
+  const callback = ringtonePickCallback
+  ringtonePickCallback = null
+  if (callback != null) callback(status, name)
+}
+
+/** 注册一次 Activity 结果监听，用于接收系统文件选择器的返回结果 */
+function ensureRingtonePickHook() : void {
+  if (ringtonePickHooked) return
+  ringtonePickHooked = true
+  UTSAndroid.onAppActivityResult((requestCode : Int, resultCode : Int, data : Intent | null) => {
+    if (requestCode != PICK_RINGTONE_REQUEST) return
+    if (resultCode != Activity.RESULT_OK || data == null) {
+      setPickResult("cancel", "")
+      return
+    }
+    const uri = data.getData()
+    if (uri == null) {
+      setPickResult("cancel", "")
+      return
+    }
+
+    const context = UTSAndroid.getAppContext()
+    if (context == null) {
+      setPickResult("error", "")
+      return
+    }
+
+    // 持久化读取权限，App 重启后仍能访问这个文件
+    try {
+      context.getContentResolver().takePersistableUriPermission(
+        uri,
+        Intent.FLAG_GRANT_READ_URI_PERMISSION
+      )
+    } catch (e) {
+      console.log("[helper-alarm] 保存铃声读取权限失败: " + e)
+    }
+
+    if (!canPlayUri(context, uri)) {
+      setPickResult("error", "")
+      return
+    }
+
+    const name = queryDisplayName(context, uri)
+    getPrefs(context).edit()
+      .putString(RINGTONE_URI_KEY, uri.toString())
+      .putString(RINGTONE_NAME_KEY, name)
+      .apply()
+    setPickResult("ok", name)
+  })
+}
+
 function startPlayback(context : Context) : void {
   stopPlayback()
 
@@ -312,7 +424,10 @@ function startPlayback(context : Context) : void {
     console.log("[helper-alarm] 调整闹钟音量失败: " + e)
   }
 
-  // 插件内置铃声优先：把 pa_ringtone.mp3 / pa_ringtone.mp4 放到 res/raw 即生效
+  // 用户选择的本地铃声优先
+  if (tryPlayUri(context, customRingtoneUri(context))) return
+
+  // 插件内置铃声：把 pa_ringtone.mp3 / pa_ringtone.mp4 放到 res/raw 即生效
   const rawId = context.getResources().getIdentifier("pa_ringtone", "raw", context.getPackageName())
   if (rawId != 0) {
     const rawUri = Uri.parse("android.resource://" + context.getPackageName() + "/" + rawId)
@@ -378,6 +493,13 @@ function scheduleRingTimeout(context : Context) : void {
     ringTimeoutTimer = -1
     stopRing(context)
   }, RING_TIMEOUT_MS)
+}
+
+/** 停止试听；正在响真正的闹钟时不要打断 */
+function stopPreviewPlayback() : void {
+  if (ringActive) return
+  stopPlayback()
+  clearRingTimeout()
 }
 
 function startRingService(
@@ -852,4 +974,74 @@ export function stopRinging() : void {
   const context = UTSAndroid.getAppContext()
   if (context == null) return
   stopRing(context)
+}
+
+/**
+ * 打开系统文件选择器，挑一个本地音频/视频作为闹钟铃声。
+ * 通过 SAF 获取持久化读取权限，不申请存储权限。
+ */
+export function pickRingtone(callback : RingtonePickCallback) : void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) {
+    callback("error", "")
+    return
+  }
+
+  stopPreviewPlayback()
+  ensureRingtonePickHook()
+  ringtonePickCallback = callback
+
+  try {
+    const intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    // 不限定 MIME：部分文件管理器把 mp4 标成 video/*，限定 audio/* 会选不到
+    intent.setType("*/*")
+    intent.addFlags(
+      Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+    )
+    activity.startActivityForResult(intent, PICK_RINGTONE_REQUEST.toInt())
+  } catch (e) {
+    console.log("[helper-alarm] 打开铃声选择器失败: " + e)
+    ringtonePickCallback = null
+    callback("error", "")
+  }
+}
+
+/** 当前本地铃声的显示名；空字符串表示使用系统闹钟铃声 */
+export function getRingtoneName() : string {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return ""
+  return getPrefs(context).getString(RINGTONE_NAME_KEY, "") ?? ""
+}
+
+/** 恢复系统默认闹钟铃声，并释放本地文件的读取权限 */
+export function clearRingtone() : void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return
+  stopPreviewPlayback()
+  const prefs = getPrefs(context)
+  const raw = prefs.getString(RINGTONE_URI_KEY, "") ?? ""
+  if (raw.length > 0) {
+    try {
+      context.getContentResolver().releasePersistableUriPermission(
+        Uri.parse(raw),
+        Intent.FLAG_GRANT_READ_URI_PERMISSION
+      )
+    } catch (e) {
+      // 权限可能已失效，忽略
+    }
+  }
+  prefs.edit().remove(RINGTONE_URI_KEY).remove(RINGTONE_NAME_KEY).apply()
+}
+
+/** 试听当前铃声，15 秒后自动停止 */
+export function previewRingtone() : void {
+  const context = UTSAndroid.getAppContext()
+  if (context == null || ringActive) return
+  startPlayback(context)
+  clearRingTimeout()
+  ringTimeoutTimer = setTimeout(() => {
+    ringTimeoutTimer = -1
+    stopPlayback()
+  }, PREVIEW_TIMEOUT_MS)
 }
