@@ -11,7 +11,8 @@
 - 双模块导航：屏幕左上角切换「商品图册」与「闹钟」，两套功能互不影响
 - 闹钟管理：新建 / 编辑 / 删除 / 开关，响铃时间与备注可自定义
 - 复杂重复规则：仅一次、每天、每周（可多选星期）、每月、每年；每月/每年支持按日期或「第几个周几」，例如每月最后一个周六、每年 5 月第二个周日
-- 闹钟响铃：到点由原生前台服务循环播放系统闹钟铃声并持续震动，App 关闭后仍可响铃；通知栏可直接「关闭 / 稍后 5 分钟」，点通知进入闹钟响铃页，弹窗同样支持稍后 5 分钟
+- 闹钟响铃：到点由原生前台服务循环播放闹钟铃声并持续震动，App 关闭后仍可响铃；通知栏可直接「关闭 / 稍后 5 分钟」，点通知进入闹钟响铃页，弹窗同样支持稍后 5 分钟
+- 自定义铃声：设置页可选择手机本地的 mp3、mp4 等音频/视频文件作为闹钟铃声，支持试听和恢复系统默认铃声
 - 应用内更新：启动后静默检查仓库里的 `releases/latest.json`，发现新版本可下载 APK 并调起系统安装；设置页支持手动检查与更换更新地址
 - 商品增删改查：名称、分类、标签、备注、购买金额
 - 图片管理：从相册/相机导入多张、压缩、480px 缩略图、设置封面、大图预览
@@ -187,11 +188,11 @@ App 启动 3 秒后静默检查一次，6 小时内不重复检查；设置页�
 1. `AlarmManager.setExactAndAllowWhileIdle()` 在指定时间触发广播
 2. 广播接收器 `AlarmReceiver` 写在 `AndroidManifest.xml` 里，App 进程被杀也能由系统实例化
 3. 商品到期提醒调用 `NotificationManager.notify()` 弹通知，并把已送达的排程 id 写入 SharedPreferences
-4. 闹钟额外启动前台服务 `AlarmRingService`：把闹钟音量调到最大，循环播放系统默认闹钟铃声（`RingtoneManager.TYPE_ALARM`）并持续震动，最长响 5 分钟
+4. 闹钟额外启动前台服务 `AlarmRingService`：把闹钟音量调到最大，循环播放闹钟铃声并持续震动，最长响 5 分钟
 5. 闹钟通知支持全屏提醒，通知栏提供「关闭 / 稍后 5 分钟」；点击通知通过 `PendingIntent` 拉起 App，携带 `module=alarm` 与 `alarmId`
 6. 排程同时持久化，`BootReceiver` 在 `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` 后恢复未到期闹钟
 
-闹钟铃声与系统闹钟一致，修改手机的「闹钟铃声」即可更换。如果想让 App 自带一个固定铃声，把音频/视频文件命名为 `pa_ringtone.mp3` 或 `pa_ringtone.mp4`，放到 `src/uni_modules/helper-alarm/utssdk/app-android/res/raw/` 下即可优先播放（MediaPlayer 支持 mp4、m4a、mp3、ogg 等格式）。
+铃声优先级：本地选择的铃声 → 插件内置铃声 → 系统默认闹钟铃声（`RingtoneManager.TYPE_ALARM`）。设置页「闹钟铃声」通过 Android SAF 文件选择器（`ACTION_OPEN_DOCUMENT`）选择本地文件，选中后用 `content://` URI 和持久化读取权限保存，App 重启后仍可用；支持 mp3、mp4、m4a、ogg 等 MediaPlayer 能解码的格式，并可试听或恢复系统铃声。如果想让 App 自带一个固定铃声，把文件命名为 `pa_ringtone.mp3` 或 `pa_ringtone.mp4`，放到 `src/uni_modules/helper-alarm/utssdk/app-android/res/raw/` 下即可。
 
 商品到期提醒与闹钟使用两套独立的排程存储键，各自全量重排时只取消自己上一次注册的 id，互不覆盖。闹钟的复杂重复规则（如每月最后一个周六）由 `services/alarmRule.js` 预先展开成具体时间点，再交给 AlarmManager。
 
@@ -210,6 +211,7 @@ App 启动 3 秒后静默检查一次，6 小时内不重复检查；设置页�
 - 未授予精确闹钟权限时自动降级为 `setAndAllowWhileIdle`，时间可能有几分钟偏差；设置页会显示授权状态
 - 国产 ROM 的省电策略可能延迟或拦截闹钟，建议在系统设置里允许自启动
 - Android 14+ 对全屏通知和后台启动前台服务有额外限制；厂商若默认关闭全屏提醒，仍会保留高优先级通知和铃声
+- 本地铃声依赖系统文件选择器授予的持久化读取权限；文件被删除/移动或 App 被清除数据后需要重新选择，权限失效时自动回退到系统闹钟铃声
 - 通知点击跳转到商品详情只保证冷启动场景；App 已在后台时的 `onNewIntent` 处理仍需真机验证
 
 ## 数据存储
